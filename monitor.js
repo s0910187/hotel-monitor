@@ -139,8 +139,8 @@ async function checkAllDates() {
     console.log(`\n🔍 [${i + 1}/${CHECKIN_DATES.length - 1}] 正在檢查 ${checkin} ~ ${checkout} ...`);
 
     let data = null;
-    // 策略：優先嘗試 TWD，若失敗且有房則嘗試 JPY
-    const currenciesToTry = ['TWD', 'JPY'];
+    // 策略：優先嘗試 JPY，若失敗則嘗試 TWD
+    const currenciesToTry = ['JPY', 'TWD'];
 
     for (const curr of currenciesToTry) {
       const url = buildUrl(checkin, checkout, curr);
@@ -156,13 +156,17 @@ async function checkAllDates() {
           return btn ? btn.innerText.trim() : null;
         });
 
-        if (currentCurr && !currentCurr.includes(curr === 'TWD' ? 'NT$' : '¥')) {
-          console.log(`  🔄 當前顯示為 ${currentCurr}，正在切換至 ${curr === 'TWD' ? 'NT$' : '¥'}...`);
+        // 判斷是否需要切換
+        const needsSwitch = (curr === 'JPY' && currentCurr && !currentCurr.includes('¥')) ||
+          (curr === 'TWD' && currentCurr && !currentCurr.includes('NT$'));
+
+        if (needsSwitch) {
+          console.log(`  🔄 當前顯示為 ${currentCurr}，正在切換至 ${curr === 'JPY' ? '¥' : 'NT$'}...`);
           try {
             await page.click('button.navbar-button.px-2.mr-1, .multiple-currency button');
             await page.waitForSelector('.modal-content, .currency-modal', { timeout: 5000 });
 
-            const targetText = curr === 'TWD' ? 'NT$' : '¥';
+            const targetText = curr === 'JPY' ? '¥' : 'NT$';
             const clicked = await page.evaluate((txt) => {
               const buttons = Array.from(document.querySelectorAll('button.currency-btn'));
               const target = buttons.find(b => b.innerText.includes(txt));
@@ -175,7 +179,7 @@ async function checkAllDates() {
 
             if (clicked) {
               await page.waitForLoadState('networkidle');
-              await page.waitForTimeout(3000); // 等待內容更新
+              await page.waitForTimeout(5000); // 切換幣別後等待較長時間
               console.log(`  ✅ 幣別切換完成`);
             } else {
               console.log(`  ⚠️ 找不到 ${targetText} 切換按鈕`);
@@ -248,8 +252,8 @@ async function checkAllDates() {
                 if (m && m[1]) {
                   const val = parseFloat(m[1].replace(/,/g, ''));
                   if (val > 5 && val !== 2026) {
-                    // 優先權：目標幣別 > TWD > JPY > USD
-                    const priority = { [targetCurr]: 4, 'TWD': 3, 'JPY': 2, 'USD': 1 };
+                    // 優先權：目標幣別 > JPY > TWD > USD
+                    const priority = { [targetCurr]: 4, 'JPY': 3, 'TWD': 2, 'USD': 1 };
                     const currentP = priority[item.c] || 0;
                     const foundP = priority[foundCurr] || 0;
 
@@ -269,21 +273,16 @@ async function checkAllDates() {
         }, { keywords: ROOM_KEYWORDS, targetCurr: curr });
 
         if (data.isAvailable && data.price) {
-          if (data.currency === 'TWD' || (data.currency === 'JPY' && curr === 'JPY')) {
+          if (data.currency === curr) {
             break; // 成功抓到目標幣別
           } else if (data.currency === 'USD') {
-            if (curr === 'TWD') {
-              console.log(`  ⚠️ 抓到 USD 價格 ($${data.price})，嘗試切換 JPY 備援...`);
-              continue; // 切換到 JPY 模式
-            } else {
-              console.log(`  ⚠️ JPY 模式下仍顯示 USD ($${data.price})，無法獲取原始日圓價格。`);
-              break;
-            }
-          } else if (data.currency === 'JPY' && curr === 'TWD') {
-            break;
+            console.log(`  ⚠️ 抓到 USD 價格 ($${data.price})，嘗試切換備援...`);
+            continue;
+          } else if (data.currency === 'TWD' && curr === 'JPY') {
+            continue;
           }
-        } else if (data.isAvailable && !data.price && curr === 'TWD') {
-          console.log(`  ⚠️ 未抓到價格，嘗試切換 JPY 備援...`);
+        } else if (data.isAvailable && !data.price) {
+          console.log(`  ⚠️ 未抓到價格，嘗試切換備援...`);
           continue;
         } else {
           break;
