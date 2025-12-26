@@ -182,7 +182,7 @@ async function checkAllDates() {
 
             let isAvailable = hasAvailable;
             if (!hasAvailable && hasSoldOut) isAvailable = false;
-            if (!hasAvailable && !hasSoldOut) isAvailable = text.includes("¥") || text.includes("NT$") || text.includes("円");
+            if (!hasAvailable && !hasSoldOut) isAvailable = text.includes("¥") || text.includes("NT$") || text.includes("円") || text.includes("TWD") || text.includes("JPY");
 
             // 搜尋價格：僅匹配 TWD 或 JPY
             const pricePatterns = [
@@ -190,7 +190,8 @@ async function checkAllDates() {
               { p: /TWD\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
               { p: /¥\s*([\d,]+)/, c: 'JPY' },
               { p: /([\d,]+)\s*円/, c: 'JPY' },
-              { p: /JPY\s*([\d,]+)/i, c: 'JPY' }
+              { p: /JPY\s*([\d,]+)/i, c: 'JPY' },
+              { p: /([0-9,]+)\s*JPY/i, c: 'JPY' }
             ];
 
             let foundPrice = null;
@@ -204,20 +205,24 @@ async function checkAllDates() {
                 const m = t.match(item.p);
                 if (m && m[1]) {
                   const val = parseFloat(m[1].replace(/,/g, ''));
-                  if (val > 5 && val !== 2026) { // 排除日期誤判
+                  if (val > 100 && val !== 2026) {
                     // 優先選擇與 targetCurr 相同的幣別
                     if (item.c === targetCurr) {
                       if (!foundPrice || foundCurr !== targetCurr || val < foundPrice) {
                         foundPrice = val;
                         foundCurr = item.c;
                       }
-                    } else if (!foundPrice && (item.c === 'TWD' || item.c === 'JPY')) { // 如果還沒找到價格，且是 TWD/JPY，則先記錄
+                    } else if (!foundPrice) {
                       foundPrice = val;
                       foundCurr = item.c;
                     }
                   }
                 }
               }
+            }
+
+            if (!foundPrice) {
+              console.log(`[Browser] 找不到價格。targetCurr=${targetCurr}, 文字摘要: ${text.substring(0, 300).replace(/\s+/g, ' ')}`);
             }
 
             return { isAvailable, price: foundPrice, currency: foundCurr };
