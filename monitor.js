@@ -150,6 +150,41 @@ async function checkAllDates() {
         await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
         await page.waitForTimeout(8000); // 等待頁面穩定
 
+        // 檢查當前幣別並切換 (如果需要)
+        const currentCurr = await page.evaluate(() => {
+          const btn = document.querySelector('button.navbar-button.px-2.mr-1, .multiple-currency button');
+          return btn ? btn.innerText.trim() : null;
+        });
+
+        if (currentCurr && !currentCurr.includes(curr === 'TWD' ? 'NT$' : '¥')) {
+          console.log(`  🔄 當前顯示為 ${currentCurr}，正在切換至 ${curr === 'TWD' ? 'NT$' : '¥'}...`);
+          try {
+            await page.click('button.navbar-button.px-2.mr-1, .multiple-currency button');
+            await page.waitForSelector('.modal-content, .currency-modal', { timeout: 5000 });
+
+            const targetText = curr === 'TWD' ? 'NT$' : '¥';
+            const clicked = await page.evaluate((txt) => {
+              const buttons = Array.from(document.querySelectorAll('button.currency-btn'));
+              const target = buttons.find(b => b.innerText.includes(txt));
+              if (target) {
+                target.click();
+                return true;
+              }
+              return false;
+            }, targetText);
+
+            if (clicked) {
+              await page.waitForLoadState('networkidle');
+              await page.waitForTimeout(3000); // 等待內容更新
+              console.log(`  ✅ 幣別切換完成`);
+            } else {
+              console.log(`  ⚠️ 找不到 ${targetText} 切換按鈕`);
+            }
+          } catch (e) {
+            console.log(`  ❌ 切換幣別失敗: ${e.message}`);
+          }
+        }
+
         data = await page.evaluate(({ keywords, targetCurr }) => {
           try {
             // 尋找包含房型關鍵字的元素
@@ -238,23 +273,17 @@ async function checkAllDates() {
             break; // 成功抓到目標幣別
           } else if (data.currency === 'USD') {
             if (curr === 'TWD') {
-              console.log(`  ⚠️  抓到 USD 價格 ($${data.price})，嘗試切換 JPY 備援...`);
+              console.log(`  ⚠️ 抓到 USD 價格 ($${data.price})，嘗試切換 JPY 備援...`);
               continue; // 切換到 JPY 模式
             } else {
-              // 在 JPY 模式下仍抓到 USD，進行匯率轉換
-              const jpyPrice = Math.round(data.price * 155); // 粗略匯率
-              console.log(`  ⚠️  JPY 模式下仍顯示 USD ($${data.price})，自動轉換為 JPY: ¥${jpyPrice} (由 USD 轉換)`);
-              data.price = jpyPrice;
-              data.currency = 'JPY';
-              data.isConverted = true;
+              console.log(`  ⚠️ JPY 模式下仍顯示 USD ($${data.price})，無法獲取原始日圓價格。`);
               break;
             }
           } else if (data.currency === 'JPY' && curr === 'TWD') {
-            // TWD 模式下抓到 JPY，直接使用
             break;
           }
         } else if (data.isAvailable && !data.price && curr === 'TWD') {
-          console.log(`  ⚠️  未抓到價格，嘗試切換 JPY 備援...`);
+          console.log(`  ⚠️ 未抓到價格，嘗試切換 JPY 備援...`);
           continue;
         } else {
           break;
