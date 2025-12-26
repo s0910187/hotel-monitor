@@ -191,7 +191,7 @@ async function checkAllDates() {
             if (!hasAvailable && hasSoldOut) isAvailable = false;
             if (!hasAvailable && !hasSoldOut) isAvailable = text.includes("¥") || text.includes("NT$") || text.includes("$") || text.includes("円");
 
-            // 搜尋價格：包含 USD 僅供內部判斷
+            // 搜尋價格
             const pricePatterns = [
               { p: /NT\$\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
               { p: /TWD\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
@@ -212,9 +212,9 @@ async function checkAllDates() {
                 const m = t.match(item.p);
                 if (m && m[1]) {
                   const val = parseFloat(m[1].replace(/,/g, ''));
-                  if (val > 5 && val !== 2026) { // USD prices can be lower, so adjust threshold
-                    // 優先權：TWD > JPY > USD
-                    const priority = { 'TWD': 3, 'JPY': 2, 'USD': 1 };
+                  if (val > 5 && val !== 2026) {
+                    // 優先權：目標幣別 > TWD > JPY > USD
+                    const priority = { [targetCurr]: 4, 'TWD': 3, 'JPY': 2, 'USD': 1 };
                     const currentP = priority[item.c] || 0;
                     const foundP = priority[foundCurr] || 0;
 
@@ -227,21 +227,32 @@ async function checkAllDates() {
               }
             }
 
-            if (!foundPrice && isAvailable) {
-              console.log(`[Browser] 有房但找不到價格。摘要: ${text.substring(0, 200).replace(/\s+/g, ' ')}`);
-            }
-
             return { isAvailable, price: foundPrice, currency: foundCurr };
           } catch (e) {
             return { error: e.message };
           }
         }, { keywords: ROOM_KEYWORDS, targetCurr: curr });
 
-        if (data.isAvailable && data.price && (data.currency === 'TWD' || data.currency === 'JPY')) {
-          break; // 成功抓到目標幣別
-        } else if (data.isAvailable && data.price && data.currency === 'USD' && curr === 'TWD') {
-          console.log(`  ⚠️  抓到 USD 價格 ($${data.price})，嘗試切換 JPY 備援...`);
-          continue;
+        if (data.isAvailable && data.price) {
+          if (data.currency === 'TWD' || (data.currency === 'JPY' && curr === 'JPY')) {
+            break; // 成功抓到目標幣別
+          } else if (data.currency === 'USD') {
+            if (curr === 'TWD') {
+              console.log(`  ⚠️  抓到 USD 價格 ($${data.price})，嘗試切換 JPY 備援...`);
+              continue; // 切換到 JPY 模式
+            } else {
+              // 在 JPY 模式下仍抓到 USD，進行匯率轉換
+              const jpyPrice = Math.round(data.price * 155); // 粗略匯率
+              console.log(`  ⚠️  JPY 模式下仍顯示 USD ($${data.price})，自動轉換為 JPY: ¥${jpyPrice} (由 USD 轉換)`);
+              data.price = jpyPrice;
+              data.currency = 'JPY';
+              data.isConverted = true;
+              break;
+            }
+          } else if (data.currency === 'JPY' && curr === 'TWD') {
+            // TWD 模式下抓到 JPY，直接使用
+            break;
+          }
         } else if (data.isAvailable && !data.price && curr === 'TWD') {
           console.log(`  ⚠️  未抓到價格，嘗試切換 JPY 備援...`);
           continue;
