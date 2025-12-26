@@ -164,38 +164,41 @@ async function checkAllDates() {
 
             if (!foundEl) return { error: "找不到房型關鍵字" };
 
-            // 向上尋找包含價格的較大容器 (通常是房型卡片)
+            // 向上尋找包含價格或狀態的卡片容器
             let targetRoom = foundEl;
-            for (let i = 0; i < 10; i++) {
-              if (targetRoom.parentElement && (targetRoom.innerText.includes("¥") || targetRoom.innerText.includes("NT$") || targetRoom.innerText.includes("円") || targetRoom.innerText.includes("Sold Out") || targetRoom.innerText.includes("満室"))) {
+            for (let i = 0; i < 8; i++) {
+              if (targetRoom.parentElement && (
+                targetRoom.innerText.includes("¥") ||
+                targetRoom.innerText.includes("NT$") ||
+                targetRoom.innerText.includes("$") ||
+                targetRoom.innerText.includes("円") ||
+                targetRoom.innerText.includes("Sold Out") ||
+                targetRoom.innerText.includes("満室")
+              )) {
                 break;
               }
-              if (targetRoom.parentElement) {
-                targetRoom = targetRoom.parentElement;
-              } else {
-                break;
-              }
+              if (targetRoom.parentElement) targetRoom = targetRoom.parentElement;
             }
 
             const text = targetRoom.innerText || "";
             const availableSigns = ["空室あり", "残り", "left", "予約する", "Book", "選擇", "Select"];
-            const soldOutSigns = ["滿房", "満室", "空室なし", "Sold Out", "No rooms available", "受付終了", "予約不可"];
+            const soldOutSigns = ["滿房", "滿室", "満室", "空室なし", "Sold Out", "No rooms available", "受付終了", "予約不可"];
 
             const hasAvailable = availableSigns.some(kw => text.includes(kw));
             const hasSoldOut = soldOutSigns.some(kw => text.includes(kw));
 
             let isAvailable = hasAvailable;
             if (!hasAvailable && hasSoldOut) isAvailable = false;
-            if (!hasAvailable && !hasSoldOut) isAvailable = text.includes("¥") || text.includes("NT$") || text.includes("円") || text.includes("TWD") || text.includes("JPY");
+            if (!hasAvailable && !hasSoldOut) isAvailable = text.includes("¥") || text.includes("NT$") || text.includes("$") || text.includes("円");
 
-            // 搜尋價格：僅匹配 TWD 或 JPY
+            // 搜尋價格：包含 USD 僅供內部判斷
             const pricePatterns = [
               { p: /NT\$\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
               { p: /TWD\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
               { p: /¥\s*([\d,]+)/, c: 'JPY' },
               { p: /([\d,]+)\s*円/, c: 'JPY' },
               { p: /JPY\s*([\d,]+)/i, c: 'JPY' },
-              { p: /([0-9,]+)\s*JPY/i, c: 'JPY' }
+              { p: /\$\s*([\d,]+(?:\.\d+)?)/, c: 'USD' }
             ];
 
             let foundPrice = null;
@@ -209,14 +212,13 @@ async function checkAllDates() {
                 const m = t.match(item.p);
                 if (m && m[1]) {
                   const val = parseFloat(m[1].replace(/,/g, ''));
-                  if (val > 100 && val !== 2026) {
-                    // 優先選擇與 targetCurr 相同的幣別
-                    if (item.c === targetCurr) {
-                      if (!foundPrice || foundCurr !== targetCurr || val < foundPrice) {
-                        foundPrice = val;
-                        foundCurr = item.c;
-                      }
-                    } else if (!foundPrice) {
+                  if (val > 5 && val !== 2026) { // USD prices can be lower, so adjust threshold
+                    // 優先權：TWD > JPY > USD
+                    const priority = { 'TWD': 3, 'JPY': 2, 'USD': 1 };
+                    const currentP = priority[item.c] || 0;
+                    const foundP = priority[foundCurr] || 0;
+
+                    if (!foundPrice || currentP > foundP || (currentP === foundP && val < foundPrice)) {
                       foundPrice = val;
                       foundCurr = item.c;
                     }
@@ -225,8 +227,8 @@ async function checkAllDates() {
               }
             }
 
-            if (!foundPrice) {
-              console.log(`[Browser] 找不到價格。targetCurr=${targetCurr}, 文字摘要: ${text.substring(0, 300).replace(/\s+/g, ' ')}`);
+            if (!foundPrice && isAvailable) {
+              console.log(`[Browser] 有房但找不到價格。摘要: ${text.substring(0, 200).replace(/\s+/g, ' ')}`);
             }
 
             return { isAvailable, price: foundPrice, currency: foundCurr };
@@ -235,19 +237,15 @@ async function checkAllDates() {
           }
         }, { keywords: ROOM_KEYWORDS, targetCurr: curr });
 
-        // 如果有房且成功抓到價格，或者 TWD 模式下沒抓到價格但有房，則繼續或跳出
-        if (data.isAvailable && data.price && data.currency === curr) {
-          // 成功抓到目標幣別價格，跳出嘗試
-          break;
+        if (data.isAvailable && data.price && (data.currency === 'TWD' || data.currency === 'JPY')) {
+          break; // 成功抓到目標幣別
+        } else if (data.isAvailable && data.price && data.currency === 'USD' && curr === 'TWD') {
+          console.log(`  ⚠️  抓到 USD 價格 ($${data.price})，嘗試切換 JPY 備援...`);
+          continue;
         } else if (data.isAvailable && !data.price && curr === 'TWD') {
-          console.log(`  ⚠️  TWD 模式下未抓到價格 (可能顯示為其他幣別)，嘗試切換 JPY...`);
-          continue; // 繼續嘗試 JPY
-        } else if (data.isAvailable && data.price && data.currency !== curr && curr === 'TWD') {
-          // TWD 模式下抓到 JPY 價格，也算成功，但優先級低於 TWD 價格
-          console.log(`  ⚠️  TWD 模式下抓到 JPY 價格，將使用此價格。`);
-          break;
+          console.log(`  ⚠️  未抓到價格，嘗試切換 JPY 備援...`);
+          continue;
         } else {
-          // 沒房，或有房但沒抓到價格且不是 TWD 模式，或抓到價格但不是目標幣別，則結束嘗試
           break;
         }
       } catch (err) {
