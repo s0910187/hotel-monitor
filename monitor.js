@@ -165,9 +165,12 @@ async function checkAllDates() {
           }
         }
 
-        if (!targetRoom) return { error: "找不到房型" };
+        if (!targetRoom) {
+          console.log("找不到房型，頁面文字摘要:", document.body.innerText.substring(0, 500).replace(/\s+/g, ' '));
+          return { error: "找不到房型" };
+        }
 
-        const text = targetRoom.innerText;
+        const text = targetRoom.innerText || "";
         const availableSigns = ["空室あり", "残り", "left", "予約する", "Book", "選擇", "Select"];
         const soldOutSigns = ["滿房", "満室", "空室なし", "Sold Out", "No rooms available", "受付終了", "予約不可"];
 
@@ -193,7 +196,10 @@ async function checkAllDates() {
 
         const allSub = Array.from(targetRoom.querySelectorAll('*'));
         for (const el of [targetRoom, ...allSub]) {
-          const t = el.innerText;
+          if (!el) continue;
+          const t = el.innerText || "";
+          if (!t) continue;
+
           for (const item of pricePatterns) {
             const m = t.match(item.p);
             if (m) {
