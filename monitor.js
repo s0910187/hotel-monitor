@@ -166,113 +166,96 @@ async function checkAllDates() {
           'quad room'
         ];
 
-        // 尋找包含任一關鍵字的元素
-        let targetRoom = null;
-        for (const container of possibleContainers) {
-          const text = container.textContent || '';
+        // 1. 捕捉全頁文字以供 debug
+        const fullPageText = document.body.innerText.replace(/\s+/g, ' ');
+        console.log('全頁文字長度:', fullPageText.length);
+        if (fullPageText.includes('NT$')) {
+          console.log('頁面中發現 NT$ 符號！');
+          const index = fullPageText.indexOf('NT$');
+          console.log('NT$ 附近的文字:', fullPageText.substring(index - 50, index + 50));
+        } else {
+          console.log('頁面中未發現 NT$ 符號');
+        }
 
-          for (const keyword of roomKeywords) {
-            if (text.includes(keyword)) {
-              targetRoom = container;
+        const roomElements = Array.from(document.querySelectorAll('.room-item, .room_item, [class*="room-item"], [class*="RoomItem"], .room-type-item, .room_type_item'));
+
+        let targetRoom = null;
+        for (const el of roomElements) {
+          const text = el.innerText;
+          if (roomType.some(keyword => text.includes(keyword))) {
+            targetRoom = el;
+            break;
+          }
+        }
+
+        // 如果沒找到特定容器，嘗試找包含關鍵字的任何大容器
+        if (!targetRoom) {
+          const allDivs = Array.from(document.querySelectorAll('div'));
+          for (const div of allDivs) {
+            if (div.children.length > 5 && roomType.some(keyword => div.innerText.includes(keyword))) {
+              targetRoom = div;
               break;
             }
           }
-
-          if (targetRoom) break;
         }
 
         if (!targetRoom) {
-          return {
-            isAvailable: false,
-            price: null,
-            error: '找不到四人房型'
-          };
+          return { isAvailable: false, error: "找不到四人房型" };
         }
 
-        const roomText = targetRoom.textContent;
-
-        // 檢查是否滿房
-        const isSoldOut = roomText.includes('満室') ||
-          roomText.includes('受付終了') ||
-          roomText.includes('sold out') ||
-          roomText.includes('預約不可') ||
-          roomText.includes('予約不可');
+        const roomText = targetRoom.innerText;
+        const isSoldOut = roomText.includes("滿房") || roomText.includes("空室なし") || roomText.includes("Sold Out") || roomText.includes("満室");
 
         let price = null;
 
-        // 方法1: 尋找包含價格的特定元素
-        const priceSelectors = [
-          '.price',
-          '.amount',
-          '[class*="price"]',
-          '[class*="Price"]',
-          '[class*="amount"]',
-          '.member-price',
-          '.normal-price'
+        // 強化價格搜尋：在 targetRoom 內搜尋所有包含數字且有貨幣符號的文字
+        const pricePatterns = [
+          /NT\$\s*([\d,]+)/i,
+          /TWD\s*([\d,]+)/i,
+          /([\d,]+)\s*TWD/i,
+          /¥\s*([\d,]+)/,
+          /([\d,]+)\s*円/,
+          /JPY\s*([\d,]+)/i,
+          /[¥￥円]\s*([\d,]+)/
         ];
 
-        for (const selector of priceSelectors) {
-          const priceEls = targetRoom.querySelectorAll(selector);
-          for (const priceEl of priceEls) {
-            const priceText = priceEl.textContent.trim();
-            if (!priceText) continue;
-
-            // 嘗試匹配包含數字的文字，但排除純年份 (2026)
-            // 優先找包含 NT$, TWD, ¥, 円 的
-            const match = priceText.match(/(?:NT\$|TWD|JPY|¥|¥|円|\$)\s*([\d,]+)/i);
+        // 遍歷所有子元素找價格
+        const allElements = Array.from(targetRoom.querySelectorAll('*'));
+        for (const el of allElements) {
+          const text = el.innerText.trim();
+          for (const pattern of pricePatterns) {
+            const match = text.match(pattern);
             if (match) {
               const priceStr = match[1].replace(/,/g, '');
               const parsedPrice = parseInt(priceStr);
-              if (parsedPrice > 500 && parsedPrice < 1000000) {
-                price = parsedPrice;
-                console.log(`✓ 從選擇器 [${selector}] 找到價格: ${priceText} -> ${price}`);
-                break;
+              if (parsedPrice > 500 && parsedPrice < 1000000 && parsedPrice !== 2026) {
+                if (!price || parsedPrice < price) { // 取最低價
+                  price = parsedPrice;
+                }
               }
             }
           }
-          if (price) break;
         }
 
-        // 方法2: 如果沒找到, 用正則從整個房間文字抓取
+        // 如果還是沒找到，嘗試從 roomText 直接匹配
         if (!price) {
-          console.log('從選擇器未找到價格，嘗試從整個房間文字搜尋...');
-
-          const pricePatterns = [
-            /NT\$\s*([\d,]+)/i,
-            /TWD\s*([\d,]+)/i,
-            /([\d,]+)\s*TWD/i,
-            /¥\s*([\d,]+)/,
-            /([\d,]+)\s*円/,
-            /JPY\s*([\d,]+)/i,
-            /[¥￥円]\s*([\d,]+)/,
-            // 匹配 5 位數以上的純數字 (通常房價會是 5 位數日幣或 4 位數台幣)
-            // 排除 2026 (4位數)
-            /(\d{5,})/
-          ];
-
           for (const pattern of pricePatterns) {
             const match = roomText.match(pattern);
             if (match) {
-              const priceStr = (match[1] || match[0]).replace(/,/g, '');
+              const priceStr = match[1].replace(/,/g, '');
               const parsedPrice = parseInt(priceStr);
-              // 排除 2026
-              if (parsedPrice !== 2026 && parsedPrice > 500 && parsedPrice < 1000000) {
+              if (parsedPrice > 500 && parsedPrice < 1000000 && parsedPrice !== 2026) {
                 price = parsedPrice;
-                console.log(`✓ 用正則 [${pattern}] 找到價格: ${match[0]} -> ${price}`);
                 break;
               }
             }
           }
-        }
-
-        if (!price) {
-          console.log('❌ 仍然未找到價格');
-          console.log('房間文字片段:', roomText.substring(0, 500).replace(/\n/g, ' '));
         }
 
         return {
           isAvailable: !isSoldOut,
-          price: price
+          price: price,
+          debugText: roomText.substring(0, 200)
         };
       });
 
