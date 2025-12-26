@@ -51,7 +51,7 @@ function buildUrl(checkin, checkout) {
     `&checkin=${encodeURIComponent(checkin)}` +
     `&checkout=${encodeURIComponent(checkout)}` +
     `&type=rooms&is_day_use=false&rooms=${roomsParam}` +
-    `&order=recommended&is_including_occupied=false&mcp_currency=TWD`;
+    `&order=recommended&is_including_occupied=false&mcp_currency=TWD&lang=ja-JP`;
 }
 
 function loadLastState() {
@@ -111,7 +111,11 @@ async function checkAllDates() {
   });
 
   const context = await browser.newContext({
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    locale: 'ja-JP',
+    extraHTTPHeaders: {
+      'Accept-Language': 'ja-JP,ja;q=0.9,zh-TW;q=0.8,zh;q=0.7,en-US;q=0.6,en;q=0.5'
+    }
   });
   const page = await context.newPage();
 
@@ -198,7 +202,10 @@ async function checkAllDates() {
         }
 
         const roomText = targetRoom.innerText;
-        const isSoldOut = roomText.includes("滿房") || roomText.includes("空室なし") || roomText.includes("Sold Out") || roomText.includes("満室");
+        // 滿房判斷：包含「滿房」、「満室」、「Sold Out」、「No rooms available」等
+        // 但要排除「Only X rooms left」
+        const soldOutKeywords = ["滿房", "満室", "空室なし", "Sold Out", "No rooms available", "受付終了", "予約不可"];
+        const isSoldOut = soldOutKeywords.some(kw => roomText.includes(kw)) && !roomText.includes("left");
 
         let price = null;
 
@@ -210,7 +217,8 @@ async function checkAllDates() {
           /¥\s*([\d,]+)/,
           /([\d,]+)\s*円/,
           /JPY\s*([\d,]+)/i,
-          /[¥￥円]\s*([\d,]+)/
+          /[¥￥円]\s*([\d,]+)/,
+          /\$\s*([\d,]+)/           // 增加 $ 作為備用 (USD)
         ];
 
         // 遍歷所有子元素找價格
