@@ -137,198 +137,119 @@ async function checkAllDates() {
     const checkout = CHECKIN_DATES[i + 1];
     const url = buildUrl(checkin, checkout);
 
-    console.log(`\n🔍 正在抓取 ${checkin} ~ ${checkout} ...`);
-    console.log(`🌐 URL: ${url}`);
+    console.log(`\n🔍 [${i + 1}/${CHECKIN_DATES.length - 1}] 正在檢查 ${checkin} ~ ${checkout} ...`);
 
     try {
-      await page.goto(url, {
-        waitUntil: "networkidle",
-        timeout: 60000
-      });
+      await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
+      await page.waitForTimeout(10000); // 等待頁面穩定
 
-      // 等待頁面完全加載
-      await page.waitForTimeout(10000);
-
-      try {
-        // 嘗試等待房間列表或「無房」訊息出現
-        await page.waitForSelector('.room-item, .room_item, [class*="room-item"], .no-room, .no_room, [class*="no-room"]', { timeout: 10000 });
-      } catch (e) {
-        console.log('  ⚠️  等待房間元素超時，嘗試繼續執行...');
-      }
-
-      const data = await page.evaluate((roomType) => {
-        // 1. 捕捉全頁文字以供 debug
-        const fullPageText = document.body.innerText;
-        console.log('全頁文字長度:', fullPageText.length);
-
-        if (fullPageText.length < 3000) {
-          console.log('頁面內容較短，前 1000 字內容:', fullPageText.substring(0, 1000).replace(/\s+/g, ' '));
-        }
-
-        const currencySymbols = ['NT$', 'TWD', '¥', 'JPY', '円', '$'];
-        for (const sym of currencySymbols) {
-          if (fullPageText.includes(sym)) {
-            const index = fullPageText.indexOf(sym);
-            console.log(`發現符號 ${sym}！附近的文字: ${fullPageText.substring(index - 20, index + 40).replace(/\n/g, ' ')}`);
-          }
-        }
-
-        if (fullPageText.length < 2000) {
-          console.log('頁面內容過短，完整文字內容:', fullPageText.replace(/\s+/g, ' '));
-        }
-
+      const data = await page.evaluate((keywords) => {
         const roomElements = Array.from(document.querySelectorAll('.room-item, .room_item, [class*="room-item"], [class*="RoomItem"], .room-type-item, .room_type_item'));
 
         let targetRoom = null;
         for (const el of roomElements) {
-          const text = el.innerText;
-          if (roomType.some(keyword => text.includes(keyword))) {
+          if (keywords.some(kw => el.innerText.includes(kw))) {
             targetRoom = el;
             break;
           }
         }
 
-        // 如果沒找到特定容器，嘗試找包含關鍵字的任何大容器
         if (!targetRoom) {
+          // 嘗試找包含關鍵字的大容器
           const allDivs = Array.from(document.querySelectorAll('div'));
           for (const div of allDivs) {
-            if (div.children.length > 5 && roomType.some(keyword => div.innerText.includes(keyword))) {
+            if (div.children.length > 5 && keywords.some(kw => div.innerText.includes(kw))) {
               targetRoom = div;
               break;
             }
           }
         }
 
-        if (!targetRoom) {
-          return { isAvailable: false, error: "找不到四人房型" };
-        }
+        if (!targetRoom) return { error: "找不到房型" };
 
-        const roomText = targetRoom.innerText;
+        const text = targetRoom.innerText;
+        const availableSigns = ["空室あり", "残り", "left", "予約する", "Book", "選擇", "Select"];
+        const soldOutSigns = ["滿房", "満室", "空室なし", "Sold Out", "No rooms available", "受付終了", "予約不可"];
 
-        // 房況判斷邏輯優化
-        // 1. 檢查是否有明確的「可用」標示
-        const availableKeywords = ["空室あり", "残り", "left", "予約する", "Book", "選擇", "Select"];
-        const hasAvailableSign = availableKeywords.some(kw => roomText.includes(kw));
+        const hasAvailable = availableSigns.some(kw => text.includes(kw));
+        const hasSoldOut = soldOutSigns.some(kw => text.includes(kw));
 
-        // 2. 檢查是否有明確的「滿房」標示
-        const soldOutKeywords = ["滿房", "満室", "空室なし", "Sold Out", "No rooms available", "受付終了", "予約不可"];
-        const hasSoldOutSign = soldOutKeywords.some(kw => roomText.includes(kw));
+        // 判定邏輯：有可用標示則為 true；否則若有滿房標示則為 false；若都沒發現則看是否有價格
+        let isAvailable = hasAvailable;
+        if (!hasAvailable && hasSoldOut) isAvailable = false;
+        if (!hasAvailable && !hasSoldOut) isAvailable = text.includes("$") || text.includes("¥") || text.includes("NT$");
 
-        // 如果有可用標示，則判定為有房；否則如果有滿房標示，則判定為滿房
-        const isAvailable = hasAvailableSign || (!hasSoldOutSign && roomText.includes("價格"));
-        const isSoldOut = !isAvailable;
-
-        if (isAvailable) {
-          console.log(`判定為【有房】: 發現可用標示或未發現滿房標示`);
-        } else {
-          console.log(`判定為【滿房】: 未發現可用標示且發現滿房標示`);
-        }
-
-        let price = null;
-        let currency = 'TWD';
-
-        // 強化價格搜尋：在 targetRoom 內搜尋所有包含數字且有貨幣符號的文字
+        // 搜尋價格
         const pricePatterns = [
-          { pattern: /NT\$\s*([\d,]+(?:\.\d+)?)/i, curr: 'TWD' },
-          { pattern: /TWD\s*([\d,]+(?:\.\d+)?)/i, curr: 'TWD' },
-          { pattern: /([\d,]+(?:\.\d+)?)\s*TWD/i, curr: 'TWD' },
-          { pattern: /¥\s*([\d,]+)/, curr: 'JPY' },
-          { pattern: /([\d,]+)\s*円/, curr: 'JPY' },
-          { pattern: /JPY\s*([\d,]+)/i, curr: 'JPY' },
-          { pattern: /[¥￥円]\s*([\d,]+)/, curr: 'JPY' },
-          { pattern: /\$\s*([\d,]+(?:\.\d+)?)/, curr: 'USD' }
+          { p: /NT\$\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
+          { p: /TWD\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
+          { p: /¥\s*([\d,]+)/, c: 'JPY' },
+          { p: /([\d,]+)\s*円/, c: 'JPY' },
+          { p: /\$\s*([\d,]+(?:\.\d+)?)/, c: 'USD' }
         ];
 
-        // 遍歷所有子元素找價格
-        const allElements = Array.from(targetRoom.querySelectorAll('*'));
-        for (const el of allElements) {
-          const text = el.innerText.trim();
+        let foundPrice = null;
+        let foundCurr = 'TWD';
+
+        const allSub = Array.from(targetRoom.querySelectorAll('*'));
+        for (const el of [targetRoom, ...allSub]) {
+          const t = el.innerText;
           for (const item of pricePatterns) {
-            const match = text.match(item.pattern);
-            if (match) {
-              const priceStr = match[1].replace(/,/g, '');
-              let parsedPrice = parseFloat(priceStr);
-
-              // 如果是 USD 且數值小，轉換為 TWD (匯率約 32)
-              if (item.curr === 'USD' && parsedPrice < 2000) {
-                parsedPrice = Math.round(parsedPrice * 32);
-                console.log(`發現 USD 價格: $${priceStr}，轉換為 TWD: ${parsedPrice}`);
-              } else if (item.curr === 'JPY') {
-                // 如果是 JPY，轉換為 TWD (匯率約 0.22)
-                parsedPrice = Math.round(parsedPrice * 0.22);
-              }
-
-              if (parsedPrice > 500 && parsedPrice < 1000000 && parsedPrice !== 2026) {
-                if (!price || parsedPrice < price) { // 取最低價
-                  price = parsedPrice;
+            const m = t.match(item.p);
+            if (m) {
+              const val = parseFloat(m[1].replace(/,/g, ''));
+              if (val > 5 && val !== 2026) { // 排除過小的價格和年份
+                if (!foundPrice || val < foundPrice) { // 取最低價
+                  foundPrice = val;
+                  foundCurr = item.c;
                 }
               }
             }
           }
         }
 
-        // 如果還是沒找到，嘗試從 roomText 直接匹配
-        if (!price) {
-          for (const item of pricePatterns) {
-            const match = roomText.match(item.pattern);
-            if (match) {
-              const priceStr = match[1].replace(/,/g, '');
-              let parsedPrice = parseFloat(priceStr);
-              if (item.curr === 'USD' && parsedPrice < 2000) {
-                parsedPrice = Math.round(parsedPrice * 32);
-              } else if (item.curr === 'JPY') {
-                parsedPrice = Math.round(parsedPrice * 0.22);
-              }
-
-              if (parsedPrice > 500 && parsedPrice < 1000000 && parsedPrice !== 2026) {
-                price = parsedPrice;
-                break;
-              }
-            }
-          }
-        }
-
         return {
-          isAvailable: isAvailable,
-          price: price,
-          debugText: roomText.substring(0, 200)
+          isAvailable,
+          price: foundPrice,
+          currency: foundCurr,
+          text: text.substring(0, 100).replace(/\s+/g, ' ') // 傳回部分文字供 debug
         };
       }, ROOM_KEYWORDS);
 
-      console.log(`  📊 抓取結果: 日期=${checkin}, 可訂=${data.isAvailable}, 價格=${data.price ?? '未知'}`);
       if (data.error) {
-        console.log(`  ⚠️  錯誤資訊: ${data.error}`);
+        console.log(`  ⚠️  ${data.error}`);
+        results[checkin] = { isAvailable: false, price: null };
+      } else {
+        let finalPrice = data.price;
+        if (data.price) {
+          if (data.currency === 'USD' && data.price < 2000) { // 假設小於2000的USD價格才需要轉換
+            finalPrice = Math.round(data.price * 32);
+            console.log(`  🔄 發現 USD 價格: $${data.price}，轉換為 TWD: ${finalPrice}`);
+          } else if (data.currency === 'JPY') {
+            finalPrice = Math.round(data.price * 0.22);
+            console.log(`  🔄 發現 JPY 價格: ¥${data.price}，轉換為 TWD: ${finalPrice}`);
+          }
+        }
+
+        console.log(`  📊 結果: 可訂=${data.isAvailable}, 原始價格=${data.price} (${data.currency}), 轉換後=${finalPrice ?? '未知'}`);
+        results[checkin] = { isAvailable: data.isAvailable, price: finalPrice };
+
+        const prev = lastState[checkin];
+        if (data.isAvailable && (!prev || !prev.isAvailable)) {
+          const msg = `【空房釋出】${checkin} 價格：NT$${finalPrice ?? "未知"}`;
+          notifications.push(msg);
+          console.log(`  🔔 ${msg}`);
+        } else if (data.isAvailable && prev?.isAvailable && finalPrice && prev.price && finalPrice < prev.price) {
+          const msg = `【價格下降】${checkin} NT$${prev.price.toLocaleString()} → NT$${finalPrice.toLocaleString()}`;
+          notifications.push(msg);
+          console.log(`  💰 ${msg}`);
+        }
       }
 
-      const prev = lastState[checkin];
-      results[checkin] = { isAvailable: data.isAvailable, price: data.price };
-
-      // 通知條件 1：空房釋出
-      if (data.isAvailable && (!prev || !prev.isAvailable)) {
-        const msg = `【空房釋出】${checkin} 價格：NT$${data.price ?? "未知"}`;
-        notifications.push(msg);
-        console.log(`  🔔 ${msg}`);
-      }
-
-      // 通知條件 2：價格下降
-      if (
-        data.isAvailable &&
-        prev?.isAvailable &&
-        data.price &&
-        prev.price &&
-        data.price < prev.price
-      ) {
-        const msg = `【價格下降】${checkin} NT$${prev.price.toLocaleString()} → NT$${data.price.toLocaleString()}`;
-        notifications.push(msg);
-        console.log(`  💰 ${msg}`);
-      }
-
-      // 延遲避免請求過快
       await page.waitForTimeout(2000);
-
     } catch (err) {
-      console.error(`  ❌ ${checkin} 抓取失敗:`, err.message);
-      results[checkin] = { isAvailable: false, price: null, error: err.message };
+      console.error(`  ❌ ${checkin} 發生錯誤:`, err.message);
+      results[checkin] = { isAvailable: false, price: null };
     }
   }
 
