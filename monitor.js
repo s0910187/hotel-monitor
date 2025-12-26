@@ -212,7 +212,8 @@ async function checkAllDates() {
             if (match) {
               const priceStr = (match[1] || match[2]).replace(/,/g, '');
               const parsedPrice = parseInt(priceStr);
-              if (parsedPrice > 500 && parsedPrice < 1000000) {
+              // 提高最小門檻到 3000，避免抓到年份 2026
+              if (parsedPrice >= 3000 && parsedPrice < 1000000) {
                 price = parsedPrice;
                 break;
               }
@@ -240,7 +241,8 @@ async function checkAllDates() {
             if (match) {
               const priceStr = match[1].replace(/,/g, '');
               const parsedPrice = parseInt(priceStr);
-              if (parsedPrice > 500 && parsedPrice < 1000000) {
+              // 提高最小門檻到 3000，避免抓到年份 2026
+              if (parsedPrice >= 3000 && parsedPrice < 1000000) {
                 price = parsedPrice;
                 break;
               }
