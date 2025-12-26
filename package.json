@@ -1,0 +1,21 @@
+{
+  "name": "hotel-monitor",
+  "version": "1.0.0",
+  "description": "盛岡站前大和魯內飯店監控",
+  "main": "monitor.js",
+  "scripts": {
+    "start": "node monitor.js",
+    "test": "node monitor.js"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "nodemailer": "^6.9.0"
+  },
+  "keywords": [
+    "hotel",
+    "monitor",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT"
+}

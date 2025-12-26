@@ -1,0 +1,58 @@
+name: 盛岡大和魯內飯店監控
+
+on:
+  schedule:
+    # 日本時間 06:00-23:59 每小時執行（台灣 05:00-22:59）
+    # UTC 時間為 20:00-13:59（跨日）
+    - cron: '0 20-23 * * *'  # UTC 20:00-23:00 (台灣 04:00-07:00)
+    - cron: '0 0-13 * * *'   # UTC 00:00-13:00 (台灣 08:00-21:00)
+    
+    # 或選擇每 1.5 小時（更省額度）:
+    # - cron: '0 20-23/2 * * *'  # 20:00, 22:00 
+    # - cron: '0 0-13/2 * * *'   # 00:00, 02:00, 04:00, 06:00, 08:00, 10:00, 12:00
+    
+    # 或選擇每 2 小時（最省額度）:
+    # - cron: '0 20-23/2 * * *'  # 20:00, 22:00
+    # - cron: '0 1-13/2 * * *'   # 01:00, 03:00, 05:00, 07:00, 09:00, 11:00, 13:00
+    
+  workflow_dispatch:  # 允許手動觸發
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 檢出程式碼
+        uses: actions/checkout@v4
+      
+      - name: 設定 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: 安裝依賴
+        run: |
+          npm install playwright nodemailer
+          npx playwright install chromium
+          npx playwright install-deps chromium
+      
+      - name: 執行監控腳本
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: node monitor.js
+      
+      - name: 上傳狀態檔案
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: last-state
+          path: last_state.json
+          retention-days: 90
+      
+      - name: 下載上次狀態
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: last-state
