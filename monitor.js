@@ -204,30 +204,38 @@ async function checkAllDates() {
         }
 
         const roomText = targetRoom.innerText;
-        // 滿房判斷：包含「滿房」、「満室」、「Sold Out」、「No rooms available」等
-        // 但要排除「Only X rooms left」或「残りX部屋」
+
+        // 房況判斷邏輯優化
+        // 1. 檢查是否有明確的「可用」標示
+        const availableKeywords = ["空室あり", "残り", "left", "予約する", "Book", "選擇", "Select"];
+        const hasAvailableSign = availableKeywords.some(kw => roomText.includes(kw));
+
+        // 2. 檢查是否有明確的「滿房」標示
         const soldOutKeywords = ["滿房", "満室", "空室なし", "Sold Out", "No rooms available", "受付終了", "予約不可"];
-        const matchedSoldOutKeyword = soldOutKeywords.find(kw => roomText.includes(kw));
-        const hasLeftKeyword = roomText.includes("left") || roomText.includes("残り") || roomText.includes("空室あり");
+        const hasSoldOutSign = soldOutKeywords.some(kw => roomText.includes(kw));
 
-        const isSoldOut = !!matchedSoldOutKeyword && !hasLeftKeyword;
+        // 如果有可用標示，則判定為有房；否則如果有滿房標示，則判定為滿房
+        const isAvailable = hasAvailableSign || (!hasSoldOutSign && roomText.includes("價格"));
+        const isSoldOut = !isAvailable;
 
-        if (isSoldOut) {
-          console.log(`偵測到滿房關鍵字: "${matchedSoldOutKeyword}"，且未發現可用關鍵字`);
+        if (isAvailable) {
+          console.log(`判定為【有房】: 發現可用標示或未發現滿房標示`);
+        } else {
+          console.log(`判定為【滿房】: 未發現可用標示且發現滿房標示`);
         }
 
         let price = null;
 
         // 強化價格搜尋：在 targetRoom 內搜尋所有包含數字且有貨幣符號的文字
         const pricePatterns = [
-          /NT\$\s*([\d,]+)/i,
-          /TWD\s*([\d,]+)/i,
-          /([\d,]+)\s*TWD/i,
+          /NT\$\s*([\d,]+(?:\.\d+)?)/i,
+          /TWD\s*([\d,]+(?:\.\d+)?)/i,
+          /([\d,]+(?:\.\d+)?)\s*TWD/i,
           /¥\s*([\d,]+)/,
           /([\d,]+)\s*円/,
           /JPY\s*([\d,]+)/i,
           /[¥￥円]\s*([\d,]+)/,
-          /\$\s*([\d,]+)/           // 增加 $ 作為備用 (USD)
+          /\$\s*([\d,]+(?:\.\d+)?)/    // 增加 $ 作為備用 (USD/TWD?)
         ];
 
         // 遍歷所有子元素找價格
