@@ -208,21 +208,23 @@ async function checkAllDates() {
           if (priceEl) {
             const priceText = priceEl.textContent;
 
-            const match = priceText.match(/(?:NT\$|TWD|¥|¥|円|\$)\s*([\d,]+)|([0-9]{4,})/i);
+            const match = priceText.match(/(?:NT\\$|TWD|JPY|¥|¥|円|\\$)\\s*([\\d,]+)|([0-9]{4,})/i);
             if (match) {
               const priceStr = (match[1] || match[2]).replace(/,/g, '');
               const parsedPrice = parseInt(priceStr);
-              // 提高最小門檻到 3000，避免抓到年份 2026
-              if (parsedPrice >= 3000 && parsedPrice < 1000000) {
+              if (parsedPrice > 500 && parsedPrice < 1000000) {
                 price = parsedPrice;
+                console.log(`✓ 從選擇器找到價格: ${parsedPrice}`);
                 break;
               }
             }
           }
         }
 
-        // 方法2: 用正則從整個房間文字抓取
+        // 方法2: 如果沒找到,用正則從整個房間文字抓取
         if (!price) {
+          console.log('從選擇器未找到價格，嘗試用正則表達式...');
+
           const pricePatterns = [
             /NT\$\s*([\d,]+)/i,           // NT$ 6,794 (最優先)
             /TWD\s*([\d,]+)/i,            // TWD 6794
@@ -241,13 +243,18 @@ async function checkAllDates() {
             if (match) {
               const priceStr = match[1].replace(/,/g, '');
               const parsedPrice = parseInt(priceStr);
-              // 提高最小門檻到 3000，避免抓到年份 2026
-              if (parsedPrice >= 3000 && parsedPrice < 1000000) {
+              if (parsedPrice > 500 && parsedPrice < 1000000) {
                 price = parsedPrice;
+                console.log(`✓ 用正則找到價格: ${match[0]} = ${price}`);
                 break;
               }
             }
           }
+        }
+
+        if (!price) {
+          console.log('❌ 未找到價格');
+          console.log('房間文字內容(前300字):', roomText.substring(0, 300));
         }
 
         return {
