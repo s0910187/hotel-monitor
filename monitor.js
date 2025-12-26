@@ -100,8 +100,16 @@ async function checkAllDates() {
     ]
   });
 
-  const page = await browser.newPage({
+  const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  });
+  const page = await context.newPage();
+
+  // 捕捉瀏覽器內部的 console.log
+  page.on('console', msg => {
+    if (msg.type() === 'log' || msg.type() === 'error') {
+      console.log(`[Browser] ${msg.text()}`);
+    }
   });
 
   const results = {};
@@ -195,52 +203,62 @@ async function checkAllDates() {
         // 方法1: 尋找包含價格的特定元素
         const priceSelectors = [
           '.price',
+          '.amount',
           '[class*="price"]',
           '[class*="Price"]',
-          'span[class*="price"]',
-          'div[class*="price"]',
-          '.amount',
-          '[class*="amount"]'
+          '[class*="amount"]',
+          '.member-price',
+          '.normal-price'
         ];
 
         for (const selector of priceSelectors) {
-          const priceEl = targetRoom.querySelector(selector);
-          if (priceEl) {
-            const priceText = priceEl.textContent;
+          const priceEls = targetRoom.querySelectorAll(selector);
+          for (const priceEl of priceEls) {
+            const priceText = priceEl.textContent.trim();
+            if (!priceText) continue;
 
-            // 只匹配有貨幣符號的價格，避免匹配年份
-            const match = priceText.match(/(?:NT\$|TWD)\s*([\d,]+)/i);
+            // 嘗試匹配包含數字的文字，但排除純年份 (2026)
+            // 優先找包含 NT$, TWD, ¥, 円 的
+            const match = priceText.match(/(?:NT\$|TWD|JPY|¥|¥|円|\$)\s*([\d,]+)/i);
             if (match) {
               const priceStr = match[1].replace(/,/g, '');
               const parsedPrice = parseInt(priceStr);
               if (parsedPrice > 500 && parsedPrice < 1000000) {
                 price = parsedPrice;
+                console.log(`✓ 從選擇器 [${selector}] 找到價格: ${priceText} -> ${price}`);
                 break;
               }
             }
           }
+          if (price) break;
         }
 
-        // 方法2: 如果沒找到,用正則從整個房間文字抓取
+        // 方法2: 如果沒找到, 用正則從整個房間文字抓取
         if (!price) {
-          console.log('從選擇器未找到價格，嘗試用正則表達式...');
+          console.log('從選擇器未找到價格，嘗試從整個房間文字搜尋...');
 
           const pricePatterns = [
-            /NT\$\s*([\d,]+)/i,           // NT$ 6,794 (最優先)
-            /TWD\s*([\d,]+)/i,            // TWD 6794
-            /([\d,]+)\s*TWD/i,            // 6794 TWD
-            /NT\$\s*([\d,]+)/,            // 另一種寫法
-            // 移除純數字匹配以避免抓到年份
+            /NT\$\s*([\d,]+)/i,
+            /TWD\s*([\d,]+)/i,
+            /([\d,]+)\s*TWD/i,
+            /¥\s*([\d,]+)/,
+            /([\d,]+)\s*円/,
+            /JPY\s*([\d,]+)/i,
+            /[¥￥円]\s*([\d,]+)/,
+            // 匹配 5 位數以上的純數字 (通常房價會是 5 位數日幣或 4 位數台幣)
+            // 排除 2026 (4位數)
+            /(\d{5,})/
           ];
 
           for (const pattern of pricePatterns) {
             const match = roomText.match(pattern);
             if (match) {
-              const priceStr = match[1].replace(/,/g, '');
+              const priceStr = (match[1] || match[0]).replace(/,/g, '');
               const parsedPrice = parseInt(priceStr);
-              if (parsedPrice > 500 && parsedPrice < 1000000) {
+              // 排除 2026
+              if (parsedPrice !== 2026 && parsedPrice > 500 && parsedPrice < 1000000) {
                 price = parsedPrice;
-                console.log(`✓ 用正則找到價格: ${match[0]} = ${price}`);
+                console.log(`✓ 用正則 [${pattern}] 找到價格: ${match[0]} -> ${price}`);
                 break;
               }
             }
@@ -248,8 +266,8 @@ async function checkAllDates() {
         }
 
         if (!price) {
-          console.log('❌ 未找到價格');
-          console.log('房間文字內容(前300字):', roomText.substring(0, 300));
+          console.log('❌ 仍然未找到價格');
+          console.log('房間文字片段:', roomText.substring(0, 500).replace(/\n/g, ' '));
         }
 
         return {
