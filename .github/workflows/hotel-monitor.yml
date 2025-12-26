@@ -26,15 +26,13 @@ jobs:
           npx playwright install chromium
           npx playwright install-deps chromium
       
-      - name: 下載上次狀態 (跨執行)
-        uses: dawidd6/action-download-artifact@v6
-        continue-on-error: true
+      - name: 還原上次狀態 (Cache)
+        uses: actions/cache/restore@v4
         with:
-          workflow: hotel-monitor.yml
-          name: last-state
-          path: ./
-          search_artifacts: true
-          if_no_artifact_found: warn
+          path: last_state.json
+          key: state-${{ github.run_id }}
+          restore-keys: |
+            state-
 
       - name: 執行監控腳本
         env:
@@ -43,10 +41,9 @@ jobs:
           MAIL_TO: ${{ secrets.MAIL_TO }}
         run: node monitor.js
       
-      - name: 上傳狀態檔案
-        uses: actions/upload-artifact@v4
+      - name: 保存當前狀態 (Cache)
+        uses: actions/cache/save@v4
         if: always()
         with:
-          name: last-state
           path: last_state.json
-          retention-days: 90
+          key: state-${{ github.run_id }}
