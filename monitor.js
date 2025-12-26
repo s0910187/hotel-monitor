@@ -303,10 +303,19 @@ async function checkAllDates() {
       const prev = lastState[checkin];
       const priceDisplay = data.price ? `${currencyLabel}${data.price.toLocaleString()}` : "未知";
 
-      if (data.isAvailable && (!prev || !prev.isAvailable)) {
-        notifications.push(`【空房釋出】${checkin} 價格：${priceDisplay}`);
-      } else if (data.isAvailable && prev?.isAvailable && data.price && prev.price && data.currency === prev.currency && data.price < prev.price) {
-        notifications.push(`【價格下降】${checkin} ${currencyLabel}${prev.price.toLocaleString()} → ${priceDisplay}`);
+      // 詳細比較邏輯
+      if (data.isAvailable) {
+        if (!prev || !prev.isAvailable) {
+          // 真正的狀態變更：從 沒房/未紀錄 變成 有房
+          console.log(`  ✨ 偵測到新空房: ${checkin}`);
+          notifications.push(`【空房釋出】${checkin} 價格：${priceDisplay}`);
+        } else if (prev.isAvailable && data.price && prev.price && data.currency === prev.currency && data.price < prev.price) {
+          // 房價下降 (限同幣別比較)
+          console.log(`  📉 偵測到價格下降: ${checkin} (${prev.price} -> ${data.price})`);
+          notifications.push(`【價格下降】${checkin} ${currencyLabel}${prev.price.toLocaleString()} → ${priceDisplay}`);
+        } else if (prev.isAvailable && data.currency !== prev.currency) {
+          console.log(`  ℹ️ 幣別變動 (${prev.currency} -> ${data.currency})，已記錄新狀態但暫不通知變動`);
+        }
       }
     }
     await page.waitForTimeout(1000);
@@ -319,12 +328,12 @@ async function checkAllDates() {
   const isDailyReportTime = shouldSendDailyReport();
 
   if (isDailyReportTime) {
-    console.log("\n📅 定時報告時間，準備發送每日報告...");
+    console.log("\n📅 定時報告時間，準備發送報告...");
 
     const now = new Date();
-    const taiwanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+    const taiwanTimeStr = now.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
     const reportLines = [
-      `【定時報告】${taiwanTime.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}`,
+      `【定時報告】${taiwanTimeStr}`,
       "",
       "=== 盛岡站前大和魯內飯店 四人房 房況報告 ===",
       ""
@@ -338,8 +347,8 @@ async function checkAllDates() {
     }
 
     reportLines.push("");
-    reportLines.push("此為定時報告，每天早上6:00和晚上6:00自動發送。");
-    reportLines.push("若有空房釋出或價格下降，將立即另外通知。");
+    reportLines.push("此為定時報告項目，系統將於每日 06:00 和 18:00 發送現狀摘要。");
+    reportLines.push("若偵測到【新釋出空房】或【房價下降】，將會立即另外發信通知。");
 
     try {
       await sendMail(

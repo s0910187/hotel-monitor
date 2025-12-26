@@ -26,6 +26,13 @@ jobs:
           npx playwright install chromium
           npx playwright install-deps chromium
       
+      - name: 下載上次狀態
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: last-state
+          path: ./
+
       - name: 執行監控腳本
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
@@ -40,9 +47,3 @@ jobs:
           name: last-state
           path: last_state.json
           retention-days: 90
-      
-      - name: 下載上次狀態
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: last-state
