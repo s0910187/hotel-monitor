@@ -150,7 +150,7 @@ async function checkAllDates() {
         await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
         await page.waitForTimeout(8000); // 等待頁面穩定
 
-        data = await page.evaluate((keywords, targetCurr) => {
+        data = await page.evaluate(({ keywords, targetCurr }) => {
           try {
             const roomElements = Array.from(document.querySelectorAll('.room-item, .room_item, [class*="room-item"], [class*="RoomItem"], .room-type-item, .room_type_item'));
             let targetRoom = null;
@@ -205,7 +205,7 @@ async function checkAllDates() {
                 if (m && m[1]) {
                   const val = parseFloat(m[1].replace(/,/g, ''));
                   if (val > 5 && val !== 2026) { // 排除日期誤判
-                    // 優先選擇與 targetCurr 相同的幣別，如果已找到則取較低價格
+                    // 優先選擇與 targetCurr 相同的幣別
                     if (item.c === targetCurr) {
                       if (!foundPrice || foundCurr !== targetCurr || val < foundPrice) {
                         foundPrice = val;
@@ -224,7 +224,7 @@ async function checkAllDates() {
           } catch (e) {
             return { error: e.message };
           }
-        }, ROOM_KEYWORDS, curr);
+        }, { keywords: ROOM_KEYWORDS, targetCurr: curr });
 
         // 如果有房且成功抓到價格，或者 TWD 模式下沒抓到價格但有房，則繼續或跳出
         if (data.isAvailable && data.price && data.currency === curr) {
