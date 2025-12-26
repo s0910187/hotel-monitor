@@ -186,14 +186,13 @@ async function checkAllDates() {
           if (!hasAvailable && hasSoldOut) isAvailable = false;
           if (!hasAvailable && !hasSoldOut) isAvailable = text.includes("$") || text.includes("¥") || text.includes("NT$");
 
-          // 搜尋價格：優先尋找 TWD/NT$，其次 JPY/¥，最後匹配 $ (僅供排除)
+          // 搜尋價格：優先尋找 TWD/NT$，其次 JPY/¥
           const pricePatterns = [
             { p: /NT\$\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
             { p: /TWD\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
             { p: /¥\s*([\d,]+)/, c: 'JPY' },
             { p: /([\d,]+)\s*円/, c: 'JPY' },
-            { p: /JPY\s*([\d,]+)/i, c: 'JPY' },
-            { p: /\$\s*([\d,]+(?:\.\d+)?)/, c: 'USD' }
+            { p: /JPY\s*([\d,]+)/i, c: 'JPY' }
           ];
 
           let foundPrice = null;
@@ -212,8 +211,8 @@ async function checkAllDates() {
               if (m && m[1]) {
                 const val = parseFloat(m[1].replace(/,/g, ''));
                 if (val > 5 && val !== 2026) {
-                  // 優先採用 TWD > JPY > USD
-                  const priority = { 'TWD': 3, 'JPY': 2, 'USD': 1 };
+                  // 優先採用 TWD > JPY
+                  const priority = { 'TWD': 2, 'JPY': 1 };
                   const currentPriority = priority[item.c] || 0;
                   const foundPriority = priority[foundCurr] || 0;
 
@@ -227,7 +226,7 @@ async function checkAllDates() {
           }
 
           if (!foundPrice) {
-            console.log("找不到價格。targetRoom 文字摘要:", text.substring(0, 200).replace(/\s+/g, ' '));
+            console.log("找不到價格 (排除 USD)。targetRoom 文字摘要:", text.substring(0, 200).replace(/\s+/g, ' '));
           }
 
           return {
