@@ -208,13 +208,13 @@ async function checkAllDates() {
           if (priceEl) {
             const priceText = priceEl.textContent;
 
-            const match = priceText.match(/(?:NT\\$|TWD|JPY|¥|¥|円|\\$)\\s*([\\d,]+)|([0-9]{4,})/i);
+            // 只匹配有貨幣符號的價格，避免匹配年份
+            const match = priceText.match(/(?:NT\$|TWD)\s*([\d,]+)/i);
             if (match) {
-              const priceStr = (match[1] || match[2]).replace(/,/g, '');
+              const priceStr = match[1].replace(/,/g, '');
               const parsedPrice = parseInt(priceStr);
               if (parsedPrice > 500 && parsedPrice < 1000000) {
                 price = parsedPrice;
-                console.log(`✓ 從選擇器找到價格: ${parsedPrice}`);
                 break;
               }
             }
@@ -229,13 +229,8 @@ async function checkAllDates() {
             /NT\$\s*([\d,]+)/i,           // NT$ 6,794 (最優先)
             /TWD\s*([\d,]+)/i,            // TWD 6794
             /([\d,]+)\s*TWD/i,            // 6794 TWD
-            /¥\s*([\d,]+)/,               // ¥ 6794
-            /([\d,]+)\s*円/,              // 6794円
-            /JPY\s*([\d,]+)/i,            // JPY 6794
-            /([\d,]+)\s*JPY/i,            // 6794 JPY
-            /[¥￥円]\s*([\d,]+)/,         // ¥6794 或 円6794
-            /\$\s*([\d,]+)/,              // $ 6794
-            /([0-9]{4,})/                 // 至少4位數字 (最後嘗試)
+            /NT\$\s*([\d,]+)/,            // 另一種寫法
+            // 移除純數字匹配以避免抓到年份
           ];
 
           for (const pattern of pricePatterns) {
