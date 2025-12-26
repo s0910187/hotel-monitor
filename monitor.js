@@ -144,82 +144,91 @@ async function checkAllDates() {
       await page.waitForTimeout(10000); // 等待頁面穩定
 
       const data = await page.evaluate((keywords) => {
-        const roomElements = Array.from(document.querySelectorAll('.room-item, .room_item, [class*="room-item"], [class*="RoomItem"], .room-type-item, .room_type_item'));
+        try {
+          const roomElements = Array.from(document.querySelectorAll('.room-item, .room_item, [class*="room-item"], [class*="RoomItem"], .room-type-item, .room_type_item'));
 
-        let targetRoom = null;
-        for (const el of roomElements) {
-          if (keywords.some(kw => el.innerText.includes(kw))) {
-            targetRoom = el;
-            break;
-          }
-        }
-
-        if (!targetRoom) {
-          // 嘗試找包含關鍵字的大容器
-          const allDivs = Array.from(document.querySelectorAll('div'));
-          for (const div of allDivs) {
-            if (div.children.length > 5 && keywords.some(kw => div.innerText.includes(kw))) {
-              targetRoom = div;
+          let targetRoom = null;
+          for (const el of roomElements) {
+            if (keywords.some(kw => el.innerText && el.innerText.includes(kw))) {
+              targetRoom = el;
               break;
             }
           }
-        }
 
-        if (!targetRoom) {
-          console.log("找不到房型，頁面文字摘要:", document.body.innerText.substring(0, 500).replace(/\s+/g, ' '));
-          return { error: "找不到房型" };
-        }
+          if (!targetRoom) {
+            // 嘗試找包含關鍵字的大容器
+            const allDivs = Array.from(document.querySelectorAll('div'));
+            for (const div of allDivs) {
+              if (div.children.length > 3 && keywords.some(kw => div.innerText && div.innerText.includes(kw))) {
+                targetRoom = div;
+                break;
+              }
+            }
+          }
 
-        const text = targetRoom.innerText || "";
-        const availableSigns = ["空室あり", "残り", "left", "予約する", "Book", "選擇", "Select"];
-        const soldOutSigns = ["滿房", "満室", "空室なし", "Sold Out", "No rooms available", "受付終了", "予約不可"];
+          if (!targetRoom) {
+            const divsWithRoom = Array.from(document.querySelectorAll('div'))
+              .filter(d => d.innerText && (d.innerText.includes("房") || d.innerText.includes("Room") || d.innerText.includes("ルーム")))
+              .map(d => d.innerText.substring(0, 50))
+              .slice(0, 5);
+            console.log("找不到房型。包含關鍵字的 div 摘要:", JSON.stringify(divsWithRoom));
+            return { error: "找不到房型" };
+          }
 
-        const hasAvailable = availableSigns.some(kw => text.includes(kw));
-        const hasSoldOut = soldOutSigns.some(kw => text.includes(kw));
+          const text = targetRoom.innerText || "";
+          const availableSigns = ["空室あり", "残り", "left", "予約する", "Book", "選擇", "Select"];
+          const soldOutSigns = ["滿房", "満室", "空室なし", "Sold Out", "No rooms available", "受付終了", "予約不可"];
 
-        // 判定邏輯：有可用標示則為 true；否則若有滿房標示則為 false；若都沒發現則看是否有價格
-        let isAvailable = hasAvailable;
-        if (!hasAvailable && hasSoldOut) isAvailable = false;
-        if (!hasAvailable && !hasSoldOut) isAvailable = text.includes("$") || text.includes("¥") || text.includes("NT$");
+          const hasAvailable = availableSigns.some(kw => text.includes(kw));
+          const hasSoldOut = soldOutSigns.some(kw => text.includes(kw));
 
-        // 搜尋價格
-        const pricePatterns = [
-          { p: /NT\$\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
-          { p: /TWD\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
-          { p: /¥\s*([\d,]+)/, c: 'JPY' },
-          { p: /([\d,]+)\s*円/, c: 'JPY' },
-          { p: /\$\s*([\d,]+(?:\.\d+)?)/, c: 'USD' }
-        ];
+          let isAvailable = hasAvailable;
+          if (!hasAvailable && hasSoldOut) isAvailable = false;
+          if (!hasAvailable && !hasSoldOut) isAvailable = text.includes("$") || text.includes("¥") || text.includes("NT$");
 
-        let foundPrice = null;
-        let foundCurr = 'TWD';
+          // 搜尋價格
+          const pricePatterns = [
+            { p: /NT\$\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
+            { p: /TWD\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
+            { p: /¥\s*([\d,]+)/, c: 'JPY' },
+            { p: /([\d,]+)\s*円/, c: 'JPY' },
+            { p: /\$\s*([\d,]+(?:\.\d+)?)/, c: 'USD' }
+          ];
 
-        const allSub = Array.from(targetRoom.querySelectorAll('*'));
-        for (const el of [targetRoom, ...allSub]) {
-          if (!el) continue;
-          const t = el.innerText || "";
-          if (!t) continue;
+          let foundPrice = null;
+          let foundCurr = 'TWD';
 
-          for (const item of pricePatterns) {
-            const m = t.match(item.p);
-            if (m) {
-              const val = parseFloat(m[1].replace(/,/g, ''));
-              if (val > 5 && val !== 2026) { // 排除過小的價格和年份
-                if (!foundPrice || val < foundPrice) { // 取最低價
-                  foundPrice = val;
-                  foundCurr = item.c;
+          const allSub = Array.from(targetRoom.querySelectorAll('*'));
+          const elementsToSearch = [targetRoom, ...allSub];
+
+          for (const el of elementsToSearch) {
+            if (!el || !el.innerText) continue;
+            const t = el.innerText;
+
+            for (const item of pricePatterns) {
+              if (!item || !item.p) continue;
+              const m = t.match(item.p);
+              if (m && m[1]) {
+                const val = parseFloat(m[1].replace(/,/g, ''));
+                if (val > 5 && val !== 2026) {
+                  if (!foundPrice || val < foundPrice) {
+                    foundPrice = val;
+                    foundCurr = item.c;
+                  }
                 }
               }
             }
           }
-        }
 
-        return {
-          isAvailable,
-          price: foundPrice,
-          currency: foundCurr,
-          text: text.substring(0, 100).replace(/\s+/g, ' ') // 傳回部分文字供 debug
-        };
+          return {
+            isAvailable,
+            price: foundPrice,
+            currency: foundCurr,
+            text: text.substring(0, 100).replace(/\s+/g, ' ')
+          };
+        } catch (e) {
+          return { error: "Internal Error: " + e.message + "\nStack: " + e.stack };
+        }
       }, ROOM_KEYWORDS);
 
       if (data.error) {
