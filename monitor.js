@@ -36,12 +36,12 @@ const transporter = nodemailer.createTransport({
 ================================ */
 function buildUrl(checkin, checkout) {
   const roomsParam = encodeURIComponent(JSON.stringify([{ adults: 4 }]));
-  // 使用 JPY 顯示日元價格
+  // 使用 TWD 顯示台幣價格（與本地端測試一致）
   return `https://reserve.daiwaroynet.jp/booking/result?code=${HOTEL_CODE}` +
     `&checkin=${encodeURIComponent(checkin)}` +
     `&checkout=${encodeURIComponent(checkout)}` +
     `&type=rooms&is_day_use=false&rooms=${roomsParam}` +
-    `&order=recommended&is_including_occupied=false&mcp_currency=JPY`;
+    `&order=recommended&is_including_occupied=false&mcp_currency=TWD`;
 }
 
 function loadLastState() {
@@ -208,7 +208,7 @@ async function checkAllDates() {
           if (priceEl) {
             const priceText = priceEl.textContent;
 
-            const match = priceText.match(/(?:JPY|¥|¥|円|\$)\s*([\d,]+)|([0-9]{4,})/i);
+            const match = priceText.match(/(?:NT\$|TWD|¥|¥|円|\$)\s*([\d,]+)|([0-9]{4,})/i);
             if (match) {
               const priceStr = (match[1] || match[2]).replace(/,/g, '');
               const parsedPrice = parseInt(priceStr);
@@ -223,13 +223,16 @@ async function checkAllDates() {
         // 方法2: 用正則從整個房間文字抓取
         if (!price) {
           const pricePatterns = [
-            /¥\s*([\d,]+)/,
-            /([\d,]+)\s*円/,
-            /JPY\s*([\d,]+)/i,
-            /([\d,]+)\s*JPY/i,
-            /[¥￥円]\s*([\d,]+)/,
-            /\$\s*([\d,]+)/,
-            /([0-9]{4,})/
+            /NT\$\s*([\d,]+)/i,           // NT$ 6,794 (最優先)
+            /TWD\s*([\d,]+)/i,            // TWD 6794
+            /([\d,]+)\s*TWD/i,            // 6794 TWD
+            /¥\s*([\d,]+)/,               // ¥ 6794
+            /([\d,]+)\s*円/,              // 6794円
+            /JPY\s*([\d,]+)/i,            // JPY 6794
+            /([\d,]+)\s*JPY/i,            // 6794 JPY
+            /[¥￥円]\s*([\d,]+)/,         // ¥6794 或 円6794
+            /\$\s*([\d,]+)/,              // $ 6794
+            /([0-9]{4,})/                 // 至少4位數字 (最後嘗試)
           ];
 
           for (const pattern of pricePatterns) {
@@ -251,7 +254,7 @@ async function checkAllDates() {
         };
       });
 
-      console.log(`  📊 結果: 可訂=${data.isAvailable}, 價格=¥${data.price ?? '未知'}`);
+      console.log(`  📊 結果: 可訂=${data.isAvailable}, 價格=NT$${data.price ?? '未知'}`);
       if (data.error) {
         console.log(`  ⚠️  ${data.error}`);
       }
@@ -261,7 +264,7 @@ async function checkAllDates() {
 
       // 通知條件 1：空房釋出
       if (data.isAvailable && (!prev || !prev.isAvailable)) {
-        const msg = `【空房釋出】${checkin} 價格：¥${data.price ?? "未知"}`;
+        const msg = `【空房釋出】${checkin} 價格：NT$${data.price ?? "未知"}`;
         notifications.push(msg);
         console.log(`  🔔 ${msg}`);
       }
@@ -274,7 +277,7 @@ async function checkAllDates() {
         prev.price &&
         data.price < prev.price
       ) {
-        const msg = `【價格下降】${checkin} ¥${prev.price.toLocaleString()} → ¥${data.price.toLocaleString()}`;
+        const msg = `【價格下降】${checkin} NT$${prev.price.toLocaleString()} → NT$${data.price.toLocaleString()}`;
         notifications.push(msg);
         console.log(`  💰 ${msg}`);
       }
@@ -308,7 +311,7 @@ async function checkAllDates() {
 
     for (const [date, info] of Object.entries(results)) {
       const status = info.isAvailable ? "✅ 有空房" : "❌ 滿房";
-      const price = info.price ? `¥${info.price.toLocaleString()}` : "未知";
+      const price = info.price ? `NT$${info.price.toLocaleString()}` : "未知";
       reportLines.push(`${date}: ${status} | 價格: ${price}`);
     }
 
@@ -363,7 +366,7 @@ async function checkAllDates() {
 
     for (const [date, info] of Object.entries(data.results)) {
       const status = info.isAvailable ? '✅ 有房' : '❌ 滿房';
-      const price = info.price ? `¥${info.price.toLocaleString()}` : '未知';
+      const price = info.price ? `NT$${info.price.toLocaleString()}` : '未知';
       console.log(`  ${date}: ${status} | 價格: ${price}`);
     }
 
