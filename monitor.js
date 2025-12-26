@@ -1,303 +1,380 @@
-const { chromium } = require('playwright');
-const nodemailer = require('nodemailer');
-const fs = require('fs');
-const path = require('path');
+const { chromium } = require("playwright");
+const fs = require("fs");
+const path = require("path");
+const nodemailer = require("nodemailer");
 
-// 設定檔案
-const STATE_FILE = path.join(__dirname, 'last_state.json');
-
-// 監控設定
-const HOTEL_URL = 'https://www.daiwaroynet.jp/morioka-ekimae/';
+// 飯店設定
+const HOTEL_CODE = "5871f90713dc5a6a2736f2d44750cbcc";
 const CHECKIN_DATES = [
-  '2025-03-15',  // 修改為你要監控的入住日期
-  '2025-03-16',
-  '2025-03-17',
+  "2026/04/17",
+  "2026/04/18",
+  "2026/04/19",
+  "2026/04/20",
+  "2026/04/21",
+  "2026/04/22"
 ];
+const STATE_FILE = path.join(__dirname, "last_state.json");
 
-// 郵件設定
+// 環境變數設定
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 const MAIL_TO = process.env.MAIL_TO;
 
-// 讀取上次狀態
+/* ==============================
+   Gmail 設定
+================================ */
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: GMAIL_USER,
+    pass: GMAIL_APP_PASSWORD
+  }
+});
+
+/* ==============================
+   工具函式
+================================ */
+function buildUrl(checkin, checkout) {
+  const roomsParam = encodeURIComponent(JSON.stringify([{ adults: 4 }]));
+  // 使用 JPY 顯示日元價格
+  return `https://reserve.daiwaroynet.jp/booking/result?code=${HOTEL_CODE}` +
+    `&checkin=${encodeURIComponent(checkin)}` +
+    `&checkout=${encodeURIComponent(checkout)}` +
+    `&type=rooms&is_day_use=false&rooms=${roomsParam}` +
+    `&order=recommended&is_including_occupied=false&mcp_currency=JPY`;
+}
+
 function loadLastState() {
-  try {
-    if (fs.existsSync(STATE_FILE)) {
-      const data = fs.readFileSync(STATE_FILE, 'utf8');
-      return JSON.parse(data);
-    }
-  } catch (error) {
-    console.log('無法讀取上次狀態:', error.message);
-  }
-  return {};
+  if (!fs.existsSync(STATE_FILE)) return {};
+  return JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
 }
 
-// 儲存當前狀態
 function saveState(state) {
-  try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-    console.log('狀態已儲存');
-  } catch (error) {
-    console.error('儲存狀態失敗:', error.message);
-  }
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-// 發送郵件
-async function sendEmail(subject, htmlContent) {
+async function sendMail(subject, body) {
   if (!GMAIL_USER || !GMAIL_APP_PASSWORD || !MAIL_TO) {
-    console.error('❌ 郵件設定不完整，跳過發送');
-    console.log('GMAIL_USER:', GMAIL_USER ? '已設定' : '未設定');
-    console.log('GMAIL_APP_PASSWORD:', GMAIL_APP_PASSWORD ? '已設定' : '未設定');
-    console.log('MAIL_TO:', MAIL_TO ? '已設定' : '未設定');
+    console.error("❌ 郵件設定不完整，跳過發送");
     return;
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: GMAIL_USER,
-        pass: GMAIL_APP_PASSWORD,
-      },
-    });
-
-    const mailOptions = {
-      from: GMAIL_USER,
+    await transporter.sendMail({
+      from: `Hotel Monitor <${GMAIL_USER}>`,
       to: MAIL_TO,
-      subject: subject,
-      html: htmlContent,
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✅ 郵件已發送:', info.messageId);
+      subject,
+      text: body
+    });
+    console.log("✅ Email 寄送成功");
   } catch (error) {
-    console.error('❌ 郵件發送失敗:', error.message);
+    console.error("❌ Email 寄送失敗:", error.message);
     throw error;
   }
 }
 
-// 檢查房間可用性
-async function checkRoomAvailability() {
-  console.log('🔍 開始檢查房間可用性...');
-  console.log('監控日期:', CHECKIN_DATES.join(', '));
+// 檢查是否為定時報告時間 (每天台灣時間 6:00 和 18:00)
+function shouldSendDailyReport() {
+  const now = new Date();
+  // 轉換為台灣時間
+  const taiwanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+  const hour = taiwanTime.getHours();
+  const minute = taiwanTime.getMinutes();
 
+  // 在 6:00-6:30 或 18:00-18:30 之間執行時發送報告
+  return (hour === 6 || hour === 18) && minute < 30;
+}
+
+/* ==============================
+   核心抓取邏輯
+================================ */
+async function checkAllDates() {
   const browser = await chromium.launch({
     headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--single-process'
+    ]
   });
 
-  try {
-    const context = await browser.newContext({
-      locale: 'ja-JP',
-      timezoneId: 'Asia/Tokyo',
-    });
+  const page = await browser.newPage({
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  });
 
-    const page = await context.newPage();
-    
-    // 設定較長的超時時間
-    page.setDefaultTimeout(60000);
+  const results = {};
+  const lastState = loadLastState();
+  const notifications = [];
 
-    console.log('正在訪問飯店網站...');
-    await page.goto(HOTEL_URL, { waitUntil: 'networkidle' });
+  for (let i = 0; i < CHECKIN_DATES.length - 1; i++) {
+    const checkin = CHECKIN_DATES[i];
+    const checkout = CHECKIN_DATES[i + 1];
+    const url = buildUrl(checkin, checkout);
 
-    const results = {};
+    console.log(`\n🔍 正在抓取 ${checkin} ~ ${checkout} ...`);
+    console.log(`🌐 URL: ${url}`);
 
-    for (const checkInDate of CHECKIN_DATES) {
-      console.log(`\n檢查日期: ${checkInDate}`);
+    try {
+      await page.goto(url, {
+        waitUntil: "networkidle",
+        timeout: 60000
+      });
+
+      // 等待頁面完全加載
+      await page.waitForTimeout(8000);
 
       try {
-        // 找到預約按鈕並點擊
-        const reserveButton = page.locator('a[href*="reserve"], a:has-text("予約"), button:has-text("予約")').first();
-        
-        if (await reserveButton.count() > 0) {
-          await reserveButton.click();
-          await page.waitForTimeout(3000);
-        } else {
-          console.log('未找到預約按鈕，嘗試直接訪問預約頁面');
-          // 嘗試直接構建預約 URL（根據實際網站調整）
-          const reserveUrl = HOTEL_URL.replace(/\/$/, '') + '/reserve/';
-          await page.goto(reserveUrl, { waitUntil: 'networkidle' });
-        }
-
-        // 填寫入住日期
-        const dateInput = page.locator('input[type="date"], input[name*="checkin"], input[name*="arrival"]').first();
-        if (await dateInput.count() > 0) {
-          await dateInput.fill(checkInDate);
-          await page.waitForTimeout(1000);
-        }
-
-        // 點擊搜尋按鈕
-        const searchButton = page.locator('button[type="submit"], button:has-text("検索"), input[type="submit"]').first();
-        if (await searchButton.count() > 0) {
-          await searchButton.click();
-          await page.waitForTimeout(5000);
-        }
-
-        // 檢查是否有空房
-        const availableRooms = await page.locator('div.room-available, .available, button:has-text("予約可"), button:not(:has-text("満室"))').count();
-        const soldOut = await page.locator('.sold-out, .full, :has-text("満室"), :has-text("空室なし")').count();
-
-        const isAvailable = availableRooms > 0 && soldOut === 0;
-
-        results[checkInDate] = {
-          available: isAvailable,
-          timestamp: new Date().toISOString(),
-          availableRooms: availableRooms,
-          soldOutIndicators: soldOut,
-        };
-
-        console.log(`${checkInDate}: ${isAvailable ? '✅ 有空房' : '❌ 已滿房'}`);
-        console.log(`  可用房間指標: ${availableRooms}, 滿房指標: ${soldOut}`);
-
-      } catch (error) {
-        console.error(`檢查 ${checkInDate} 時發生錯誤:`, error.message);
-        results[checkInDate] = {
-          available: false,
-          error: error.message,
-          timestamp: new Date().toISOString(),
-        };
+        await page.waitForSelector('body', { timeout: 5000 });
+      } catch (e) {
+        console.log('  ⚠️  頁面載入逾時，繼續嘗試...');
       }
 
-      // 返回首頁準備下一次檢查
-      await page.goto(HOTEL_URL, { waitUntil: 'networkidle' });
+      // 抓取頁面上所有可能的房型資訊
+      const data = await page.evaluate(() => {
+        const bodyText = document.body.innerText;
+
+        // 嘗試找所有房型卡片
+        const possibleContainers = [
+          ...document.querySelectorAll('[class*="room"]'),
+          ...document.querySelectorAll('[class*="Room"]'),
+          ...document.querySelectorAll('[class*="card"]'),
+          ...document.querySelectorAll('[class*="Card"]'),
+          ...document.querySelectorAll('div[class*="item"]'),
+          ...document.querySelectorAll('li'),
+          ...document.querySelectorAll('article'),
+        ];
+
+        // 多語言房型關鍵字
+        const roomKeywords = [
+          'クアッドルーム',
+          'クアッド',
+          '四人房',
+          '4人房',
+          'Quad room',
+          'Quad Room',
+          'QUAD ROOM',
+          'quad room'
+        ];
+
+        // 尋找包含任一關鍵字的元素
+        let targetRoom = null;
+        for (const container of possibleContainers) {
+          const text = container.textContent || '';
+
+          for (const keyword of roomKeywords) {
+            if (text.includes(keyword)) {
+              targetRoom = container;
+              break;
+            }
+          }
+
+          if (targetRoom) break;
+        }
+
+        if (!targetRoom) {
+          return {
+            isAvailable: false,
+            price: null,
+            error: '找不到四人房型'
+          };
+        }
+
+        const roomText = targetRoom.textContent;
+
+        // 檢查是否滿房
+        const isSoldOut = roomText.includes('満室') ||
+          roomText.includes('受付終了') ||
+          roomText.includes('sold out') ||
+          roomText.includes('預約不可') ||
+          roomText.includes('予約不可');
+
+        let price = null;
+
+        // 方法1: 尋找包含價格的特定元素
+        const priceSelectors = [
+          '.price',
+          '[class*="price"]',
+          '[class*="Price"]',
+          'span[class*="price"]',
+          'div[class*="price"]',
+          '.amount',
+          '[class*="amount"]'
+        ];
+
+        for (const selector of priceSelectors) {
+          const priceEl = targetRoom.querySelector(selector);
+          if (priceEl) {
+            const priceText = priceEl.textContent;
+
+            const match = priceText.match(/(?:JPY|¥|¥|円|\$)\s*([\d,]+)|([0-9]{4,})/i);
+            if (match) {
+              const priceStr = (match[1] || match[2]).replace(/,/g, '');
+              const parsedPrice = parseInt(priceStr);
+              if (parsedPrice > 500 && parsedPrice < 1000000) {
+                price = parsedPrice;
+                break;
+              }
+            }
+          }
+        }
+
+        // 方法2: 用正則從整個房間文字抓取
+        if (!price) {
+          const pricePatterns = [
+            /¥\s*([\d,]+)/,
+            /([\d,]+)\s*円/,
+            /JPY\s*([\d,]+)/i,
+            /([\d,]+)\s*JPY/i,
+            /[¥￥円]\s*([\d,]+)/,
+            /\$\s*([\d,]+)/,
+            /([0-9]{4,})/
+          ];
+
+          for (const pattern of pricePatterns) {
+            const match = roomText.match(pattern);
+            if (match) {
+              const priceStr = match[1].replace(/,/g, '');
+              const parsedPrice = parseInt(priceStr);
+              if (parsedPrice > 500 && parsedPrice < 1000000) {
+                price = parsedPrice;
+                break;
+              }
+            }
+          }
+        }
+
+        return {
+          isAvailable: !isSoldOut,
+          price: price
+        };
+      });
+
+      console.log(`  📊 結果: 可訂=${data.isAvailable}, 價格=¥${data.price ?? '未知'}`);
+      if (data.error) {
+        console.log(`  ⚠️  ${data.error}`);
+      }
+
+      const prev = lastState[checkin];
+      results[checkin] = { isAvailable: data.isAvailable, price: data.price };
+
+      // 通知條件 1：空房釋出
+      if (data.isAvailable && (!prev || !prev.isAvailable)) {
+        const msg = `【空房釋出】${checkin} 價格：¥${data.price ?? "未知"}`;
+        notifications.push(msg);
+        console.log(`  🔔 ${msg}`);
+      }
+
+      // 通知條件 2：價格下降
+      if (
+        data.isAvailable &&
+        prev?.isAvailable &&
+        data.price &&
+        prev.price &&
+        data.price < prev.price
+      ) {
+        const msg = `【價格下降】${checkin} ¥${prev.price.toLocaleString()} → ¥${data.price.toLocaleString()}`;
+        notifications.push(msg);
+        console.log(`  💰 ${msg}`);
+      }
+
+      // 延遲避免請求過快
       await page.waitForTimeout(2000);
-    }
 
-    await browser.close();
-    return results;
-
-  } catch (error) {
-    await browser.close();
-    throw error;
-  }
-}
-
-// 比較狀態變化
-function compareStates(oldState, newState) {
-  const changes = [];
-
-  for (const date in newState) {
-    const oldStatus = oldState[date]?.available || false;
-    const newStatus = newState[date]?.available || false;
-
-    if (oldStatus !== newStatus) {
-      changes.push({
-        date,
-        from: oldStatus ? '有空房' : '已滿房',
-        to: newStatus ? '有空房' : '已滿房',
-        newStatus,
-      });
+    } catch (err) {
+      console.error(`  ❌ ${checkin} 抓取失敗:`, err.message);
+      results[checkin] = { isAvailable: false, price: null, error: err.message };
     }
   }
 
-  return changes;
-}
+  await browser.close();
+  saveState(results);
 
-// 產生 HTML 郵件內容
-function generateEmailHTML(changes, currentState) {
-  const now = new Date();
-  const taiwanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+  // 檢查是否需要發送定時報告
+  const isDailyReportTime = shouldSendDailyReport();
 
-  let html = `
-    <h2>🏨 盛岡站前大和魯內飯店監控報告</h2>
-    <p><strong>檢查時間:</strong> ${taiwanTime.toLocaleString('zh-TW')} (台灣時間)</p>
-    <hr>
-  `;
+  if (isDailyReportTime) {
+    console.log("\n📅 定時報告時間，準備發送每日報告...");
 
-  if (changes.length > 0) {
-    html += `<h3>🔔 狀態變更</h3><ul>`;
-    changes.forEach(change => {
-      const emoji = change.newStatus ? '✅' : '❌';
-      const color = change.newStatus ? 'green' : 'red';
-      html += `
-        <li>
-          <strong style="color: ${color};">${emoji} ${change.date}</strong><br>
-          狀態變更: ${change.from} → ${change.to}
-        </li>
-      `;
-    });
-    html += `</ul>`;
+    const now = new Date();
+    const taiwanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+    const reportLines = [
+      `【定時報告】${taiwanTime.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}`,
+      "",
+      "=== 盛岡站前大和魯內飯店 四人房 房況報告 ===",
+      ""
+    ];
+
+    for (const [date, info] of Object.entries(results)) {
+      const status = info.isAvailable ? "✅ 有空房" : "❌ 滿房";
+      const price = info.price ? `¥${info.price.toLocaleString()}` : "未知";
+      reportLines.push(`${date}: ${status} | 價格: ${price}`);
+    }
+
+    reportLines.push("");
+    reportLines.push("此為定時報告，每天早上6:00和晚上6:00自動發送。");
+    reportLines.push("若有空房釋出或價格下降，將立即另外通知。");
+
+    try {
+      await sendMail(
+        "【定時報告】盛岡站前大和魯內飯店 四人房 房況",
+        reportLines.join("\n")
+      );
+      console.log("✅ 定時報告已發送");
+    } catch (error) {
+      console.error("❌ 定時報告發送失敗");
+    }
   }
 
-  html += `<h3>📊 目前狀態</h3><ul>`;
-  for (const date in currentState) {
-    const status = currentState[date];
-    const emoji = status.available ? '✅' : '❌';
-    const color = status.available ? 'green' : 'red';
-    html += `
-      <li>
-        <strong style="color: ${color};">${emoji} ${date}</strong>: 
-        ${status.available ? '有空房' : '已滿房'}
-      </li>
-    `;
+  // 發送變動通知
+  if (notifications.length > 0) {
+    console.log("\n📧 準備寄送變動通知 Email...");
+    try {
+      await sendMail(
+        "【盛岡站前大和魯內】4人房 房況 / 價格變動通知",
+        notifications.join("\n")
+      );
+      console.log("✅ 變動通知 Email 寄送成功");
+    } catch (mailErr) {
+      console.error("❌ 變動通知 Email 寄送失敗:", mailErr.message);
+    }
   }
-  html += `</ul>`;
 
-  html += `
-    <hr>
-    <p style="color: #666;">
-      <small>此郵件由 GitHub Actions 自動發送<br>
-      飯店網址: <a href="${HOTEL_URL}">${HOTEL_URL}</a></small>
-    </p>
-  `;
-
-  return html;
+  return { results, notifications };
 }
 
-// 主程式
-async function main() {
+/* ==============================
+   主程式
+================================ */
+(async () => {
   try {
-    console.log('='.repeat(60));
-    console.log('🏨 盛岡站前大和魯內飯店監控系統');
-    console.log('='.repeat(60));
+    console.log("=".repeat(60));
+    console.log("🏨 盛岡站前大和魯內飯店監控系統");
+    console.log("=".repeat(60));
+    console.log("📅 開始檢查房型...");
 
-    // 檢查房間可用性
-    const currentState = await checkRoomAvailability();
+    const data = await checkAllDates();
 
-    // 讀取上次狀態
-    const lastState = loadLastState();
+    console.log("\n" + "=".repeat(60));
+    console.log("✅ 檢查完成！");
+    console.log("=".repeat(60));
+    console.log("\n📊 結果摘要:");
 
-    // 比較變化
-    const changes = compareStates(lastState, currentState);
-
-    console.log('\n' + '='.repeat(60));
-    console.log('📊 檢查結果');
-    console.log('='.repeat(60));
-
-    if (changes.length > 0) {
-      console.log('🔔 偵測到狀態變更:');
-      changes.forEach(change => {
-        console.log(`  • ${change.date}: ${change.from} → ${change.to}`);
-      });
-
-      // 發送變更通知
-      const subject = `🔔 飯店監控 - 偵測到房間狀態變更`;
-      const html = generateEmailHTML(changes, currentState);
-      await sendEmail(subject, html);
-
-    } else {
-      console.log('ℹ️  狀態無變化');
-
-      // 每天發送一次定時報告（可選）
-      const hour = new Date().getHours();
-      if (hour === 8) {  // 台灣時間早上 8 點發送定時報告
-        console.log('📧 發送每日定時報告');
-        const subject = `📊 飯店監控 - 每日定時報告`;
-        const html = generateEmailHTML([], currentState);
-        await sendEmail(subject, html);
-      }
+    for (const [date, info] of Object.entries(data.results)) {
+      const status = info.isAvailable ? '✅ 有房' : '❌ 滿房';
+      const price = info.price ? `¥${info.price.toLocaleString()}` : '未知';
+      console.log(`  ${date}: ${status} | 價格: ${price}`);
     }
 
-    // 儲存當前狀態
-    saveState(currentState);
-
-    console.log('\n✅ 監控完成');
-    console.log('='.repeat(60));
-
-  } catch (error) {
-    console.error('❌ 執行失敗:', error);
+    if (data.notifications.length > 0) {
+      console.log("\n🔔 通知內容:");
+      data.notifications.forEach(n => console.log("  📧 " + n));
+    } else {
+      console.log("\n💤 暫無新通知");
+    }
+  } catch (err) {
+    console.error("❌ 執行錯誤：", err);
     process.exit(1);
   }
-}
-
-// 執行主程式
-main();
+})();
