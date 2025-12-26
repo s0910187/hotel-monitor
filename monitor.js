@@ -140,238 +140,229 @@ async function checkAllDates() {
       }
 
       // 抓取頁面上所有可能的房型資訊
-      const data = await page.evaluate(() => {
-        const bodyText = document.body.innerText;
-
-        // 嘗試找所有房型卡片
-        const possibleContainers = [
-          ...document.querySelectorAll('[class*="room"]'),
-          ...document.querySelectorAll('[class*="Room"]'),
-          ...document.querySelectorAll('[class*="card"]'),
-          ...document.querySelectorAll('[class*="Card"]'),
       const data = await page.evaluate((roomType) => {
-            // 1. 捕捉全頁文字以供 debug
-            const fullPageText = document.body.innerText;
-            console.log('全頁文字長度:', fullPageText.length);
+        // 1. 捕捉全頁文字以供 debug
+        const fullPageText = document.body.innerText;
+        console.log('全頁文字長度:', fullPageText.length);
 
-            const currencySymbols = ['NT$', 'TWD', '¥', 'JPY', '円', '$'];
-            for (const sym of currencySymbols) {
-              if (fullPageText.includes(sym)) {
-                const index = fullPageText.indexOf(sym);
-                console.log(`發現符號 ${sym}！附近的文字: ${fullPageText.substring(index - 20, index + 40).replace(/\n/g, ' ')}`);
+        const currencySymbols = ['NT$', 'TWD', '¥', 'JPY', '円', '$'];
+        for (const sym of currencySymbols) {
+          if (fullPageText.includes(sym)) {
+            const index = fullPageText.indexOf(sym);
+            console.log(`發現符號 ${sym}！附近的文字: ${fullPageText.substring(index - 20, index + 40).replace(/\n/g, ' ')}`);
+          }
+        }
+
+        if (fullPageText.length < 2000) {
+          console.log('頁面內容過短，完整文字內容:', fullPageText.replace(/\s+/g, ' '));
+        }
+
+        const roomElements = Array.from(document.querySelectorAll('.room-item, .room_item, [class*="room-item"], [class*="RoomItem"], .room-type-item, .room_type_item'));
+
+        let targetRoom = null;
+        for (const el of roomElements) {
+          const text = el.innerText;
+          if (roomType.some(keyword => text.includes(keyword))) {
+            targetRoom = el;
+            break;
+          }
+        }
+
+        // 如果沒找到特定容器，嘗試找包含關鍵字的任何大容器
+        if (!targetRoom) {
+          const allDivs = Array.from(document.querySelectorAll('div'));
+          for (const div of allDivs) {
+            if (div.children.length > 5 && roomType.some(keyword => div.innerText.includes(keyword))) {
+              targetRoom = div;
+              break;
+            }
+          }
+        }
+
+        if (!targetRoom) {
+          return { isAvailable: false, error: "找不到四人房型" };
+        }
+
+        const roomText = targetRoom.innerText;
+        const isSoldOut = roomText.includes("滿房") || roomText.includes("空室なし") || roomText.includes("Sold Out") || roomText.includes("満室");
+
+        let price = null;
+
+        // 強化價格搜尋：在 targetRoom 內搜尋所有包含數字且有貨幣符號的文字
+        const pricePatterns = [
+          /NT\$\s*([\d,]+)/i,
+          /TWD\s*([\d,]+)/i,
+          /([\d,]+)\s*TWD/i,
+          /¥\s*([\d,]+)/,
+          /([\d,]+)\s*円/,
+          /JPY\s*([\d,]+)/i,
+          /[¥￥円]\s*([\d,]+)/
+        ];
+
+        // 遍歷所有子元素找價格
+        const allElements = Array.from(targetRoom.querySelectorAll('*'));
+        for (const el of allElements) {
+          const text = el.innerText.trim();
+          for (const pattern of pricePatterns) {
+            const match = text.match(pattern);
+            if (match) {
+              const priceStr = match[1].replace(/,/g, '');
+              const parsedPrice = parseInt(priceStr);
+              if (parsedPrice > 500 && parsedPrice < 1000000 && parsedPrice !== 2026) {
+                if (!price || parsedPrice < price) { // 取最低價
+                  price = parsedPrice;
+                }
               }
             }
+          }
+        }
 
-            if (fullPageText.length < 2000) {
-              console.log('頁面內容過短，完整文字內容:', fullPageText.replace(/\s+/g, ' '));
-            }
-
-            const roomElements = Array.from(document.querySelectorAll('.room-item, .room_item, [class*="room-item"], [class*="RoomItem"], .room-type-item, .room_type_item'));
-
-            let targetRoom = null;
-            for (const el of roomElements) {
-              const text = el.innerText;
-              if (roomType.some(keyword => text.includes(keyword))) {
-                targetRoom = el;
+        // 如果還是沒找到，嘗試從 roomText 直接匹配
+        if (!price) {
+          for (const pattern of pricePatterns) {
+            const match = roomText.match(pattern);
+            if (match) {
+              const priceStr = match[1].replace(/,/g, '');
+              const parsedPrice = parseInt(priceStr);
+              if (parsedPrice > 500 && parsedPrice < 1000000 && parsedPrice !== 2026) {
+                price = parsedPrice;
                 break;
               }
             }
-
-            // 如果沒找到特定容器，嘗試找包含關鍵字的任何大容器
-            if (!targetRoom) {
-              const allDivs = Array.from(document.querySelectorAll('div'));
-              for (const div of allDivs) {
-                if (div.children.length > 5 && roomType.some(keyword => div.innerText.includes(keyword))) {
-                  targetRoom = div;
-                  break;
-                }
-              }
-            }
-
-            if (!targetRoom) {
-              return { isAvailable: false, error: "找不到四人房型" };
-            }
-
-            const roomText = targetRoom.innerText;
-            const isSoldOut = roomText.includes("滿房") || roomText.includes("空室なし") || roomText.includes("Sold Out") || roomText.includes("満室");
-
-            let price = null;
-
-            // 強化價格搜尋：在 targetRoom 內搜尋所有包含數字且有貨幣符號的文字
-            const pricePatterns = [
-              /NT\$\s*([\d,]+)/i,
-              /TWD\s*([\d,]+)/i,
-              /([\d,]+)\s*TWD/i,
-              /¥\s*([\d,]+)/,
-              /([\d,]+)\s*円/,
-              /JPY\s*([\d,]+)/i,
-              /[¥￥円]\s*([\d,]+)/
-            ];
-
-            // 遍歷所有子元素找價格
-            const allElements = Array.from(targetRoom.querySelectorAll('*'));
-            for (const el of allElements) {
-              const text = el.innerText.trim();
-              for (const pattern of pricePatterns) {
-                const match = text.match(pattern);
-                if (match) {
-                  const priceStr = match[1].replace(/,/g, '');
-                  const parsedPrice = parseInt(priceStr);
-                  if (parsedPrice > 500 && parsedPrice < 1000000 && parsedPrice !== 2026) {
-                    if (!price || parsedPrice < price) { // 取最低價
-                      price = parsedPrice;
-                    }
-                  }
-                }
-              }
-            }
-
-            // 如果還是沒找到，嘗試從 roomText 直接匹配
-            if (!price) {
-              for (const pattern of pricePatterns) {
-                const match = roomText.match(pattern);
-                if (match) {
-                  const priceStr = match[1].replace(/,/g, '');
-                  const parsedPrice = parseInt(priceStr);
-                  if (parsedPrice > 500 && parsedPrice < 1000000 && parsedPrice !== 2026) {
-                    price = parsedPrice;
-                    break;
-                  }
-                }
-              }
-            }
-
-            return {
-              isAvailable: !isSoldOut,
-              price: price,
-              debugText: roomText.substring(0, 200)
-            };
-          });
-
-        console.log(`  📊 結果: 可訂=${data.isAvailable}, 價格=NT$${data.price ?? '未知'}`);
-        if (data.error) {
-          console.log(`  ⚠️  ${data.error}`);
+          }
         }
 
-        const prev = lastState[checkin];
-        results[checkin] = { isAvailable: data.isAvailable, price: data.price };
+        return {
+          isAvailable: !isSoldOut,
+          price: price,
+          debugText: roomText.substring(0, 200)
+        };
+      }, ROOM_KEYWORDS);
 
-        // 通知條件 1：空房釋出
-        if (data.isAvailable && (!prev || !prev.isAvailable)) {
-          const msg = `【空房釋出】${checkin} 價格：NT$${data.price ?? "未知"}`;
-          notifications.push(msg);
-          console.log(`  🔔 ${msg}`);
-        }
-
-        // 通知條件 2：價格下降
-        if (
-          data.isAvailable &&
-          prev?.isAvailable &&
-          data.price &&
-          prev.price &&
-          data.price < prev.price
-        ) {
-          const msg = `【價格下降】${checkin} NT$${prev.price.toLocaleString()} → NT$${data.price.toLocaleString()}`;
-          notifications.push(msg);
-          console.log(`  💰 ${msg}`);
-        }
-
-        // 延遲避免請求過快
-        await page.waitForTimeout(2000);
-
-      } catch (err) {
-        console.error(`  ❌ ${checkin} 抓取失敗:`, err.message);
-        results[checkin] = { isAvailable: false, price: null, error: err.message };
+      console.log(`  📊 結果: 可訂=${data.isAvailable}, 價格=NT$${data.price ?? '未知'}`);
+      if (data.error) {
+        console.log(`  ⚠️  ${data.error}`);
       }
+
+      const prev = lastState[checkin];
+      results[checkin] = { isAvailable: data.isAvailable, price: data.price };
+
+      // 通知條件 1：空房釋出
+      if (data.isAvailable && (!prev || !prev.isAvailable)) {
+        const msg = `【空房釋出】${checkin} 價格：NT$${data.price ?? "未知"}`;
+        notifications.push(msg);
+        console.log(`  🔔 ${msg}`);
+      }
+
+      // 通知條件 2：價格下降
+      if (
+        data.isAvailable &&
+        prev?.isAvailable &&
+        data.price &&
+        prev.price &&
+        data.price < prev.price
+      ) {
+        const msg = `【價格下降】${checkin} NT$${prev.price.toLocaleString()} → NT$${data.price.toLocaleString()}`;
+        notifications.push(msg);
+        console.log(`  💰 ${msg}`);
+      }
+
+      // 延遲避免請求過快
+      await page.waitForTimeout(2000);
+
+    } catch (err) {
+      console.error(`  ❌ ${checkin} 抓取失敗:`, err.message);
+      results[checkin] = { isAvailable: false, price: null, error: err.message };
     }
-
-  await browser.close();
-    saveState(results);
-
-    // 檢查是否需要發送定時報告
-    const isDailyReportTime = shouldSendDailyReport();
-
-    if (isDailyReportTime) {
-      console.log("\n📅 定時報告時間，準備發送每日報告...");
-
-      const now = new Date();
-      const taiwanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-      const reportLines = [
-        `【定時報告】${taiwanTime.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}`,
-        "",
-        "=== 盛岡站前大和魯內飯店 四人房 房況報告 ===",
-        ""
-      ];
-
-      for (const [date, info] of Object.entries(results)) {
-        const status = info.isAvailable ? "✅ 有空房" : "❌ 滿房";
-        const price = info.price ? `NT$${info.price.toLocaleString()}` : "未知";
-        reportLines.push(`${date}: ${status} | 價格: ${price}`);
-      }
-
-      reportLines.push("");
-      reportLines.push("此為定時報告，每天早上6:00和晚上6:00自動發送。");
-      reportLines.push("若有空房釋出或價格下降，將立即另外通知。");
-
-      try {
-        await sendMail(
-          "【定時報告】盛岡站前大和魯內飯店 四人房 房況",
-          reportLines.join("\n")
-        );
-        console.log("✅ 定時報告已發送");
-      } catch (error) {
-        console.error("❌ 定時報告發送失敗");
-      }
-    }
-
-    // 發送變動通知
-    if (notifications.length > 0) {
-      console.log("\n📧 準備寄送變動通知 Email...");
-      try {
-        await sendMail(
-          "【盛岡站前大和魯內】4人房 房況 / 價格變動通知",
-          notifications.join("\n")
-        );
-        console.log("✅ 變動通知 Email 寄送成功");
-      } catch (mailErr) {
-        console.error("❌ 變動通知 Email 寄送失敗:", mailErr.message);
-      }
-    }
-
-    return { results, notifications };
   }
 
-  /* ==============================
-     主程式
-  ================================ */
-  (async () => {
-    try {
-      console.log("=".repeat(60));
-      console.log("🏨 盛岡站前大和魯內飯店監控系統");
-      console.log("=".repeat(60));
-      console.log("📅 開始檢查房型...");
+  await browser.close();
+  saveState(results);
 
-      const data = await checkAllDates();
+  // 檢查是否需要發送定時報告
+  const isDailyReportTime = shouldSendDailyReport();
 
-      console.log("\n" + "=".repeat(60));
-      console.log("✅ 檢查完成！");
-      console.log("=".repeat(60));
-      console.log("\n📊 結果摘要:");
+  if (isDailyReportTime) {
+    console.log("\n📅 定時報告時間，準備發送每日報告...");
 
-      for (const [date, info] of Object.entries(data.results)) {
-        const status = info.isAvailable ? '✅ 有房' : '❌ 滿房';
-        const price = info.price ? `NT$${info.price.toLocaleString()}` : '未知';
-        console.log(`  ${date}: ${status} | 價格: ${price}`);
-      }
+    const now = new Date();
+    const taiwanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+    const reportLines = [
+      `【定時報告】${taiwanTime.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}`,
+      "",
+      "=== 盛岡站前大和魯內飯店 四人房 房況報告 ===",
+      ""
+    ];
 
-      if (data.notifications.length > 0) {
-        console.log("\n🔔 通知內容:");
-        data.notifications.forEach(n => console.log("  📧 " + n));
-      } else {
-        console.log("\n💤 暫無新通知");
-      }
-    } catch (err) {
-      console.error("❌ 執行錯誤：", err);
-      process.exit(1);
+    for (const [date, info] of Object.entries(results)) {
+      const status = info.isAvailable ? "✅ 有空房" : "❌ 滿房";
+      const price = info.price ? `NT$${info.price.toLocaleString()}` : "未知";
+      reportLines.push(`${date}: ${status} | 價格: ${price}`);
     }
-  })();
+
+    reportLines.push("");
+    reportLines.push("此為定時報告，每天早上6:00和晚上6:00自動發送。");
+    reportLines.push("若有空房釋出或價格下降，將立即另外通知。");
+
+    try {
+      await sendMail(
+        "【定時報告】盛岡站前大和魯內飯店 四人房 房況",
+        reportLines.join("\n")
+      );
+      console.log("✅ 定時報告已發送");
+    } catch (error) {
+      console.error("❌ 定時報告發送失敗");
+    }
+  }
+
+  // 發送變動通知
+  if (notifications.length > 0) {
+    console.log("\n📧 準備寄送變動通知 Email...");
+    try {
+      await sendMail(
+        "【盛岡站前大和魯內】4人房 房況 / 價格變動通知",
+        notifications.join("\n")
+      );
+      console.log("✅ 變動通知 Email 寄送成功");
+    } catch (mailErr) {
+      console.error("❌ 變動通知 Email 寄送失敗:", mailErr.message);
+    }
+  }
+
+  return { results, notifications };
+}
+
+/* ==============================
+   主程式
+================================ */
+(async () => {
+  try {
+    console.log("=".repeat(60));
+    console.log("🏨 盛岡站前大和魯內飯店監控系統");
+    console.log("=".repeat(60));
+    console.log("📅 開始檢查房型...");
+
+    const data = await checkAllDates();
+
+    console.log("\n" + "=".repeat(60));
+    console.log("✅ 檢查完成！");
+    console.log("=".repeat(60));
+    console.log("\n📊 結果摘要:");
+
+    for (const [date, info] of Object.entries(data.results)) {
+      const status = info.isAvailable ? '✅ 有房' : '❌ 滿房';
+      const price = info.price ? `NT$${info.price.toLocaleString()}` : '未知';
+      console.log(`  ${date}: ${status} | 價格: ${price}`);
+    }
+
+    if (data.notifications.length > 0) {
+      console.log("\n🔔 通知內容:");
+      data.notifications.forEach(n => console.log("  📧 " + n));
+    } else {
+      console.log("\n💤 暫無新通知");
+    }
+  } catch (err) {
+    console.error("❌ 執行錯誤：", err);
+    process.exit(1);
+  }
+})();
