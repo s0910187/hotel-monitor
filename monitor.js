@@ -152,26 +152,30 @@ async function checkAllDates() {
 
         data = await page.evaluate(({ keywords, targetCurr }) => {
           try {
-            const roomElements = Array.from(document.querySelectorAll('.room-item, .room_item, [class*="room-item"], [class*="RoomItem"], .room-type-item, .room_type_item'));
-            let targetRoom = null;
-            for (const el of roomElements) {
-              if (keywords.some(kw => el.innerText && el.innerText.includes(kw))) {
-                targetRoom = el;
+            // 尋找包含房型關鍵字的元素
+            const allElements = Array.from(document.querySelectorAll('*'));
+            let foundEl = null;
+            for (const el of allElements) {
+              if (el.children.length === 0 && keywords.some(kw => el.innerText && el.innerText.includes(kw))) {
+                foundEl = el;
                 break;
               }
             }
 
-            if (!targetRoom) {
-              const allDivs = Array.from(document.querySelectorAll('div'));
-              for (const div of allDivs) {
-                if (div.children.length > 3 && keywords.some(kw => div.innerText && div.innerText.includes(kw))) {
-                  targetRoom = div;
-                  break;
-                }
+            if (!foundEl) return { error: "找不到房型關鍵字" };
+
+            // 向上尋找包含價格的較大容器 (通常是房型卡片)
+            let targetRoom = foundEl;
+            for (let i = 0; i < 10; i++) {
+              if (targetRoom.parentElement && (targetRoom.innerText.includes("¥") || targetRoom.innerText.includes("NT$") || targetRoom.innerText.includes("円") || targetRoom.innerText.includes("Sold Out") || targetRoom.innerText.includes("満室"))) {
+                break;
+              }
+              if (targetRoom.parentElement) {
+                targetRoom = targetRoom.parentElement;
+              } else {
+                break;
               }
             }
-
-            if (!targetRoom) return { error: "找不到房型" };
 
             const text = targetRoom.innerText || "";
             const availableSigns = ["空室あり", "残り", "left", "予約する", "Book", "選擇", "Select"];
