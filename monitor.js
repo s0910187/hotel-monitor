@@ -225,28 +225,39 @@ async function checkAllDates() {
         }
 
         let price = null;
+        let currency = 'TWD';
 
         // 強化價格搜尋：在 targetRoom 內搜尋所有包含數字且有貨幣符號的文字
         const pricePatterns = [
-          /NT\$\s*([\d,]+(?:\.\d+)?)/i,
-          /TWD\s*([\d,]+(?:\.\d+)?)/i,
-          /([\d,]+(?:\.\d+)?)\s*TWD/i,
-          /¥\s*([\d,]+)/,
-          /([\d,]+)\s*円/,
-          /JPY\s*([\d,]+)/i,
-          /[¥￥円]\s*([\d,]+)/,
-          /\$\s*([\d,]+(?:\.\d+)?)/    // 增加 $ 作為備用 (USD/TWD?)
+          { pattern: /NT\$\s*([\d,]+(?:\.\d+)?)/i, curr: 'TWD' },
+          { pattern: /TWD\s*([\d,]+(?:\.\d+)?)/i, curr: 'TWD' },
+          { pattern: /([\d,]+(?:\.\d+)?)\s*TWD/i, curr: 'TWD' },
+          { pattern: /¥\s*([\d,]+)/, curr: 'JPY' },
+          { pattern: /([\d,]+)\s*円/, curr: 'JPY' },
+          { pattern: /JPY\s*([\d,]+)/i, curr: 'JPY' },
+          { pattern: /[¥￥円]\s*([\d,]+)/, curr: 'JPY' },
+          { pattern: /\$\s*([\d,]+(?:\.\d+)?)/, curr: 'USD' }
         ];
 
         // 遍歷所有子元素找價格
         const allElements = Array.from(targetRoom.querySelectorAll('*'));
         for (const el of allElements) {
           const text = el.innerText.trim();
-          for (const pattern of pricePatterns) {
-            const match = text.match(pattern);
+          for (const item of pricePatterns) {
+            const match = text.match(item.pattern);
             if (match) {
               const priceStr = match[1].replace(/,/g, '');
-              const parsedPrice = parseInt(priceStr);
+              let parsedPrice = parseFloat(priceStr);
+
+              // 如果是 USD 且數值小，轉換為 TWD (匯率約 32)
+              if (item.curr === 'USD' && parsedPrice < 2000) {
+                parsedPrice = Math.round(parsedPrice * 32);
+                console.log(`發現 USD 價格: $${priceStr}，轉換為 TWD: ${parsedPrice}`);
+              } else if (item.curr === 'JPY') {
+                // 如果是 JPY，轉換為 TWD (匯率約 0.22)
+                parsedPrice = Math.round(parsedPrice * 0.22);
+              }
+
               if (parsedPrice > 500 && parsedPrice < 1000000 && parsedPrice !== 2026) {
                 if (!price || parsedPrice < price) { // 取最低價
                   price = parsedPrice;
@@ -258,11 +269,17 @@ async function checkAllDates() {
 
         // 如果還是沒找到，嘗試從 roomText 直接匹配
         if (!price) {
-          for (const pattern of pricePatterns) {
-            const match = roomText.match(pattern);
+          for (const item of pricePatterns) {
+            const match = roomText.match(item.pattern);
             if (match) {
               const priceStr = match[1].replace(/,/g, '');
-              const parsedPrice = parseInt(priceStr);
+              let parsedPrice = parseFloat(priceStr);
+              if (item.curr === 'USD' && parsedPrice < 2000) {
+                parsedPrice = Math.round(parsedPrice * 32);
+              } else if (item.curr === 'JPY') {
+                parsedPrice = Math.round(parsedPrice * 0.22);
+              }
+
               if (parsedPrice > 500 && parsedPrice < 1000000 && parsedPrice !== 2026) {
                 price = parsedPrice;
                 break;
@@ -272,15 +289,15 @@ async function checkAllDates() {
         }
 
         return {
-          isAvailable: !isSoldOut,
+          isAvailable: isAvailable,
           price: price,
           debugText: roomText.substring(0, 200)
         };
       }, ROOM_KEYWORDS);
 
-      console.log(`  📊 結果: 可訂=${data.isAvailable}, 價格=NT$${data.price ?? '未知'}`);
+      console.log(`  📊 抓取結果: 日期=${checkin}, 可訂=${data.isAvailable}, 價格=${data.price ?? '未知'}`);
       if (data.error) {
-        console.log(`  ⚠️  ${data.error}`);
+        console.log(`  ⚠️  錯誤資訊: ${data.error}`);
       }
 
       const prev = lastState[checkin];
