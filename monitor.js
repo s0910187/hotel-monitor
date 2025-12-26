@@ -53,7 +53,7 @@ function buildUrl(checkin, checkout) {
     `&checkin=${encodeURIComponent(checkin)}` +
     `&checkout=${encodeURIComponent(checkout)}` +
     `&type=rooms&is_day_use=false&rooms=${roomsParam}` +
-    `&order=recommended&is_including_occupied=false&mcp_currency=TWD&lang=ja-JP`;
+    `&order=recommended&is_including_occupied=false&mcp_currency=JPY&lang=ja-JP`;
 }
 
 function loadLastState() {
@@ -186,17 +186,17 @@ async function checkAllDates() {
           if (!hasAvailable && hasSoldOut) isAvailable = false;
           if (!hasAvailable && !hasSoldOut) isAvailable = text.includes("$") || text.includes("¥") || text.includes("NT$");
 
-          // 搜尋價格
+          // 搜尋價格：優先尋找 TWD/NT$，其次 JPY/¥
           const pricePatterns = [
             { p: /NT\$\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
             { p: /TWD\s*([\d,]+(?:\.\d+)?)/i, c: 'TWD' },
             { p: /¥\s*([\d,]+)/, c: 'JPY' },
             { p: /([\d,]+)\s*円/, c: 'JPY' },
-            { p: /\$\s*([\d,]+(?:\.\d+)?)/, c: 'USD' }
+            { p: /JPY\s*([\d,]+)/i, c: 'JPY' }
           ];
 
           let foundPrice = null;
-          let foundCurr = 'TWD';
+          let foundCurr = null;
 
           const allSub = Array.from(targetRoom.querySelectorAll('*'));
           const elementsToSearch = [targetRoom, ...allSub];
@@ -211,7 +211,8 @@ async function checkAllDates() {
               if (m && m[1]) {
                 const val = parseFloat(m[1].replace(/,/g, ''));
                 if (val > 5 && val !== 2026) {
-                  if (!foundPrice || val < foundPrice) {
+                  // 優先採用 TWD，如果已經有 TWD 就不再被 JPY 覆蓋
+                  if (!foundPrice || (item.c === 'TWD' && foundCurr !== 'TWD') || (item.c === foundCurr && val < foundPrice)) {
                     foundPrice = val;
                     foundCurr = item.c;
                   }
@@ -235,29 +236,20 @@ async function checkAllDates() {
         console.log(`  ⚠️  ${data.error}`);
         results[checkin] = { isAvailable: false, price: null };
       } else {
-        let finalPrice = data.price;
-        if (data.price) {
-          if (data.currency === 'USD' && data.price < 2000) { // 假設小於2000的USD價格才需要轉換
-            finalPrice = Math.round(data.price * 32);
-            console.log(`  🔄 發現 USD 價格: $${data.price}，轉換為 TWD: ${finalPrice}`);
-          } else if (data.currency === 'JPY') {
-            finalPrice = Math.round(data.price * 0.22);
-            console.log(`  🔄 發現 JPY 價格: ¥${data.price}，轉換為 TWD: ${finalPrice}`);
-          }
-        }
+        const finalPrice = data.price;
+        const currencyLabel = data.currency === 'JPY' ? '¥' : (data.currency === 'TWD' ? 'NT$' : '');
 
-        console.log(`  📊 結果: 可訂=${data.isAvailable}, 原始價格=${data.price} (${data.currency}), 轉換後=${finalPrice ?? '未知'}`);
-        results[checkin] = { isAvailable: data.isAvailable, price: finalPrice };
+        console.log(`  📊 結果: 可訂=${data.isAvailable}, 價格=${currencyLabel}${finalPrice ?? '未知'}`);
+        results[checkin] = { isAvailable: data.isAvailable, price: finalPrice, currency: data.currency };
 
         const prev = lastState[checkin];
+        const priceDisplay = finalPrice ? `${currencyLabel}${finalPrice.toLocaleString()}` : "未知";
+
         if (data.isAvailable && (!prev || !prev.isAvailable)) {
-          const msg = `【空房釋出】${checkin} 價格：NT$${finalPrice ?? "未知"}`;
-          notifications.push(msg);
-          console.log(`  🔔 ${msg}`);
-        } else if (data.isAvailable && prev?.isAvailable && finalPrice && prev.price && finalPrice < prev.price) {
-          const msg = `【價格下降】${checkin} NT$${prev.price.toLocaleString()} → NT$${finalPrice.toLocaleString()}`;
-          notifications.push(msg);
-          console.log(`  💰 ${msg}`);
+          notifications.push(`【空房釋出】${checkin} 價格：${priceDisplay}`);
+        } else if (data.isAvailable && prev?.isAvailable && finalPrice && prev.price && data.currency === prev.currency && finalPrice < prev.price) {
+          const prevPriceDisplay = `${currencyLabel}${prev.price.toLocaleString()}`;
+          notifications.push(`【價格下降】${checkin} ${prevPriceDisplay} → ${priceDisplay}`);
         }
       }
 
@@ -288,7 +280,8 @@ async function checkAllDates() {
 
     for (const [date, info] of Object.entries(results)) {
       const status = info.isAvailable ? "✅ 有空房" : "❌ 滿房";
-      const price = info.price ? `NT$${info.price.toLocaleString()}` : "未知";
+      const currencyLabel = info.currency === 'JPY' ? '¥' : (info.currency === 'TWD' ? 'NT$' : '');
+      const price = info.price ? `${currencyLabel}${info.price.toLocaleString()}` : "未知";
       reportLines.push(`${date}: ${status} | 價格: ${price}`);
     }
 
@@ -343,7 +336,8 @@ async function checkAllDates() {
 
     for (const [date, info] of Object.entries(data.results)) {
       const status = info.isAvailable ? '✅ 有房' : '❌ 滿房';
-      const price = info.price ? `NT$${info.price.toLocaleString()}` : '未知';
+      const currencyLabel = info.currency === 'JPY' ? '¥' : (info.currency === 'TWD' ? 'NT$' : '');
+      const price = info.price ? `${currencyLabel}${info.price.toLocaleString()}` : '未知';
       console.log(`  ${date}: ${status} | 價格: ${price}`);
     }
 
