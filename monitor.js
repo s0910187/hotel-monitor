@@ -5,6 +5,16 @@ const nodemailer = require("nodemailer");
 
 // 飯店設定
 const HOTEL_CODE = "5871f90713dc5a6a2736f2d44750cbcc";
+const ROOM_KEYWORDS = [
+  'クアッドルーム',
+  'クアッド',
+  '四人房',
+  '4人房',
+  'Quad room',
+  'Quad Room',
+  'QUAD ROOM',
+  'quad room'
+];
 const CHECKIN_DATES = [
   "2026/04/17",
   "2026/04/18",
@@ -131,19 +141,23 @@ async function checkAllDates() {
       });
 
       // 等待頁面完全加載
-      await page.waitForTimeout(8000);
+      await page.waitForTimeout(10000);
 
       try {
-        await page.waitForSelector('body', { timeout: 5000 });
+        // 嘗試等待房間列表或「無房」訊息出現
+        await page.waitForSelector('.room-item, .room_item, [class*="room-item"], .no-room, .no_room, [class*="no-room"]', { timeout: 10000 });
       } catch (e) {
-        console.log('  ⚠️  頁面載入逾時，繼續嘗試...');
+        console.log('  ⚠️  等待房間元素超時，嘗試繼續執行...');
       }
 
-      // 抓取頁面上所有可能的房型資訊
       const data = await page.evaluate((roomType) => {
         // 1. 捕捉全頁文字以供 debug
         const fullPageText = document.body.innerText;
         console.log('全頁文字長度:', fullPageText.length);
+
+        if (fullPageText.length < 3000) {
+          console.log('頁面內容較短，前 1000 字內容:', fullPageText.substring(0, 1000).replace(/\s+/g, ' '));
+        }
 
         const currencySymbols = ['NT$', 'TWD', '¥', 'JPY', '円', '$'];
         for (const sym of currencySymbols) {
