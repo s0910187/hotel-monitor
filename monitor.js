@@ -6,6 +6,8 @@ const nodemailer = require("nodemailer");
 // 飯店設定
 const HOTEL_CODE = "5871f90713dc5a6a2736f2d44750cbcc";
 const ROOM_KEYWORDS = [
+  'フォースルーム',
+  'フォース',
   'クアッドルーム',
   'クアッド',
   '四人房',
@@ -203,9 +205,16 @@ async function checkAllDates() {
 
         const roomText = targetRoom.innerText;
         // 滿房判斷：包含「滿房」、「満室」、「Sold Out」、「No rooms available」等
-        // 但要排除「Only X rooms left」
+        // 但要排除「Only X rooms left」或「残りX部屋」
         const soldOutKeywords = ["滿房", "満室", "空室なし", "Sold Out", "No rooms available", "受付終了", "予約不可"];
-        const isSoldOut = soldOutKeywords.some(kw => roomText.includes(kw)) && !roomText.includes("left");
+        const matchedSoldOutKeyword = soldOutKeywords.find(kw => roomText.includes(kw));
+        const hasLeftKeyword = roomText.includes("left") || roomText.includes("残り") || roomText.includes("空室あり");
+
+        const isSoldOut = !!matchedSoldOutKeyword && !hasLeftKeyword;
+
+        if (isSoldOut) {
+          console.log(`偵測到滿房關鍵字: "${matchedSoldOutKeyword}"，且未發現可用關鍵字`);
+        }
 
         let price = null;
 
