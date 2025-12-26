@@ -26,12 +26,15 @@ jobs:
           npx playwright install chromium
           npx playwright install-deps chromium
       
-      - name: 下載上次狀態
-        uses: actions/download-artifact@v4
+      - name: 下載上次狀態 (跨執行)
+        uses: dawidd6/action-download-artifact@v6
         continue-on-error: true
         with:
+          workflow: hotel-monitor.yml
           name: last-state
           path: ./
+          search_artifacts: true
+          if_no_artifact_found: warn
 
       - name: 執行監控腳本
         env:

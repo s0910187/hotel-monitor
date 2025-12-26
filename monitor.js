@@ -57,8 +57,20 @@ function buildUrl(checkin, checkout) {
 }
 
 function loadLastState() {
-  if (!fs.existsSync(STATE_FILE)) return {};
-  return JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
+  let lastState = {};
+  if (fs.existsSync(STATE_FILE)) {
+    try {
+      const raw = fs.readFileSync(STATE_FILE, 'utf8');
+      lastState = JSON.parse(raw);
+      console.log(`📦 已讀取上次狀態 (${STATE_FILE}):`);
+      console.log(JSON.stringify(lastState, null, 2));
+    } catch (e) {
+      console.error(`⚠️ 讀取狀態檔失敗: ${e.message}`);
+    }
+  } else {
+    console.log(`ℹ️ 找不到上次狀態檔案 (${STATE_FILE})，將建立新紀錄。`);
+  }
+  return lastState;
 }
 
 function saveState(state) {
