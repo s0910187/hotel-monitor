@@ -39,7 +39,8 @@
    - Expiration: `90 days` 或自選
    - 勾選權限：
      - ✅ **repo** (完整勾選)
-     - ✅ **workflow**
+     - ✅ **workflow** (必須勾選，否則無法手動觸發)
+   - ⚠️ **注意**：請務必使用 **Tokens (classic)**，不要使用 Fine-grained tokens。
 4. 點擊「**Generate token**」
 5. 複製產生的 Token（`ghp_xxxxxx...`）
    - ⚠️ **重要**：Token 只會顯示一次，請妥善保存
