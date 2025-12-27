@@ -3,7 +3,7 @@ node_modules/
 package-lock.json
 
 # 狀態檔案
-last_state.json
+
 
 # 環境變數
 .env
