@@ -12,6 +12,9 @@ const app = {
         if (!this.api.isConfigured()) {
             this.showSetup();
         } else {
+            // 填入既有的設定值（方便修改）
+            if (this.api.owner) document.getElementById('ownerInput').value = this.api.owner;
+            if (this.api.repo) document.getElementById('repoInput').value = this.api.repo;
             await this.loadData();
         }
 
@@ -23,17 +26,31 @@ const app = {
         document.getElementById('saveTokenBtn')?.addEventListener('click', () => this.saveToken());
         document.getElementById('refreshBtn')?.addEventListener('click', () => this.loadData());
         document.getElementById('manualRunBtn')?.addEventListener('click', () => this.triggerRun());
+        document.getElementById('logoutBtn')?.addEventListener('click', () => this.logout());
     },
 
     showSetup() {
         document.getElementById('loadingSpinner').classList.add('hidden');
+        document.getElementById('dashboardSection').classList.add('hidden');
         document.getElementById('setupSection').classList.remove('hidden');
+        document.getElementById('logoutBtn').classList.add('hidden');
     },
 
     showDashboard() {
         document.getElementById('setupSection').classList.add('hidden');
         document.getElementById('loadingSpinner').classList.add('hidden');
         document.getElementById('dashboardSection').classList.remove('hidden');
+        document.getElementById('logoutBtn').classList.remove('hidden');
+    },
+
+    logout() {
+        if (confirm('確定要登出並清除目前的 Token 嗎？')) {
+            localStorage.removeItem('github_config');
+            this.api = new GitHubAPI(); // 重置 API 實例
+            document.getElementById('tokenInput').value = ''; // 清空 Token 輸入框
+            this.showToast('已登出，請重新輸入 Token', 'info');
+            this.showSetup();
+        }
     },
 
     async saveToken() {
@@ -50,12 +67,14 @@ const app = {
         this.api.initialize(owner, repo, token);
 
         // 測試連線
+        this.showToast('正在驗證 Token...', 'info');
         const isValid = await this.api.testConnection();
         if (isValid) {
             this.showToast('設定儲存成功！', 'success');
             await this.loadData();
         } else {
-            this.showToast('Token 驗證失敗，請檢查設定', 'error');
+            this.showToast('Token 驗證失敗，請檢查權限或 Token 是否正確', 'error');
+            // 驗證失敗時不清空，讓使用者好修改
         }
     },
 
@@ -77,6 +96,15 @@ const app = {
             this.showDashboard();
         } catch (error) {
             console.error('載入資料失敗:', error);
+
+            // 處理 401 Bad credentials
+            if (error.message.includes('Bad credentials') || error.message.includes('401')) {
+                this.showToast('Token 無效或過期，請重新設定', 'error');
+                localStorage.removeItem('github_config'); // 自動清除無效 Token
+                setTimeout(() => this.showSetup(), 1500); // 延遲後回到設定畫面
+                return;
+            }
+
             this.showToast('載入資料失敗: ' + error.message, 'error');
         }
     },
@@ -184,7 +212,7 @@ const app = {
                         <label class="block text-sm font-semibold text-gray-700 mb-2">飯店預訂網址</label>
                         <input type="url" id="hotelUrlInput" 
                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                        <p class="text-xs text-gray-500 mt-1">💡 例如：https://reserve.daiwaroynet.jp/zh-tw/booking/result?code=...</p>
+                        <p class="text-xs text-gray-500 mt-1">💡 例如：https://reserve.daiwaroynet.jp/zh-tw/booking/result?code=... (系統會自動從網址擷取飯店代碼)</p>
                     </div>
                     <!-- 隱藏飯店代碼欄位，改由系統自動從網址擷取 -->
                     <input type="hidden" id="hotelCodeInput">
@@ -383,6 +411,13 @@ const app = {
             setTimeout(() => this.loadData(), 1500);
         } catch (error) {
             console.error('儲存設定失敗:', error);
+            // 也處理儲存時可能的 401 錯誤
+            if (error.message.includes('Bad credentials') || error.message.includes('401')) {
+                this.showToast('Token 失效，請重新登入', 'error');
+                localStorage.removeItem('github_config');
+                setTimeout(() => this.showSetup(), 1500);
+                return;
+            }
             this.showToast('❌ 儲存失敗: ' + error.message, 'error');
         }
     },
@@ -394,6 +429,10 @@ const app = {
             this.showToast('✅ 已成功觸發執行！請等待 2-3 分鐘後點擊「重新整理」查看結果', 'success');
         } catch (error) {
             console.error('觸發執行失敗:', error);
+            if (error.message.includes('Forbidden') || error.message.includes('403')) {
+                this.showToast('❌ 權限不足：請確認 Token 具有 Workflow 權限', 'error');
+                return;
+            }
             this.showToast('❌ 觸發失敗: ' + error.message, 'error');
         }
     },
