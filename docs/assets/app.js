@@ -380,8 +380,7 @@ const app = {
         const colors = {
             success: 'bg-green-600',
             error: 'bg-red-600',
-            info: 'bg-blue-600
-'
+            info: 'bg-blue-600'
         };
 
         toast.className = `fixed bottom-4 right-4 px-6 py-4 rounded-lg shadow-2xl text-white transform transition-all duration-300 ${colors[type]}`;
