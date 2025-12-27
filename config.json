@@ -1,0 +1,42 @@
+{
+    "hotel": {
+        "code": "5871f90713dc5a6a2736f2d44750cbcc",
+        "name": "盛岡站前大和魯內飯店",
+        "url": "https://reserve.daiwaroynet.jp"
+    },
+    "monitoring": {
+        "checkinDates": [
+            "2026/04/17",
+            "2026/04/18",
+            "2026/04/19",
+            "2026/04/20",
+            "2026/04/21"
+        ],
+        "roomKeywords": [
+            "フォースルーム",
+            "フォース",
+            "クアッドルーム",
+            "クアッド",
+            "四人房",
+            "4人房",
+            "Quad room",
+            "Quad Room",
+            "QUAD ROOM",
+            "quad room"
+        ],
+        "currency": "JPY",
+        "adults": 4
+    },
+    "schedule": {
+        "cron": "0 * * * *",
+        "timezone": "Asia/Taipei",
+        "description": "每小時執行一次"
+    },
+    "notification": {
+        "enabled": true,
+        "dailyReportTimes": [
+            "06:00",
+            "18:00"
+        ]
+    }
+}

@@ -3,31 +3,60 @@ const fs = require("fs");
 const path = require("path");
 const nodemailer = require("nodemailer");
 
-// 飯店設定
-const HOTEL_CODE = "5871f90713dc5a6a2736f2d44750cbcc";
-const ROOM_KEYWORDS = [
-  'フォースルーム',
-  'フォース',
-  'クアッドルーム',
-  'クアッド',
-  '四人房',
-  '4人房',
-  'Quad room',
-  'Quad Room',
-  'QUAD ROOM',
-  'quad room'
-];
-const CHECKIN_DATES = [
-  "2026/04/17",
-  "2026/04/18",
-  "2026/04/19",
-  "2026/04/20",
-  "2026/04/21",
-  "2026/04/22"
-];
+/* ==============================
+   載入配置檔
+================================ */
+function loadConfig() {
+  const configPath = path.join(__dirname, "config.json");
+  let config = {
+    hotel: {
+      code: "5871f90713dc5a6a2736f2d44750cbcc",
+      name: "盛岡站前大和魯內飯店",
+      url: "https://reserve.daiwaroynet.jp"
+    },
+    monitoring: {
+      checkinDates: ["2026/04/17", "2026/04/18", "2026/04/19", "2026/04/20", "2026/04/21"],
+      roomKeywords: ['フォースルーム', 'フォース', 'クアッドルーム', 'クアッド', '四人房', '4人房', 'Quad room', 'Quad Room', 'QUAD ROOM', 'quad room'],
+      currency: "JPY",
+      adults: 4
+    },
+    schedule: {
+      cron: "0 * * * *",
+      timezone: "Asia/Taipei"
+    },
+    notification: {
+      enabled: true,
+      dailyReportTimes: ["06:00", "18:00"]
+    }
+  };
+
+  // 嘗試讀取 config.json
+  if (fs.existsSync(configPath)) {
+    try {
+      const raw = fs.readFileSync(configPath, 'utf8');
+      const fileConfig = JSON.parse(raw);
+      config = { ...config, ...fileConfig };
+      console.log(`📋 已載入配置檔: ${configPath}`);
+    } catch (e) {
+      console.warn(`⚠️ 讀取配置檔失敗，使用預設值: ${e.message}`);
+    }
+  } else {
+    console.log(`ℹ️ 配置檔不存在，使用預設值`);
+  }
+
+  return config;
+}
+
+// 載入配置
+const CONFIG = loadConfig();
+
+// 飯店設定（從配置檔讀取）
+const HOTEL_CODE = CONFIG.hotel.code;
+const ROOM_KEYWORDS = CONFIG.monitoring.roomKeywords;
+const CHECKIN_DATES = CONFIG.monitoring.checkinDates;
 const STATE_FILE = path.join(__dirname, "last_state.json");
 
-// 環境變數設定
+// 環境變數設定（優先權高於配置檔）
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 const MAIL_TO = process.env.MAIL_TO;
@@ -47,13 +76,13 @@ const transporter = nodemailer.createTransport({
    工具函式
 ================================ */
 function buildUrl(checkin, checkout) {
-  const roomsParam = encodeURIComponent(JSON.stringify([{ adults: 4 }]));
-  // 使用 TWD 顯示台幣價格（與本地端測試一致）
-  return `https://reserve.daiwaroynet.jp/booking/result?code=${HOTEL_CODE}` +
+  const roomsParam = encodeURIComponent(JSON.stringify([{ adults: CONFIG.monitoring.adults }]));
+  const currency = CONFIG.monitoring.currency || 'JPY';
+  return `${CONFIG.hotel.url}/booking/result?code=${HOTEL_CODE}` +
     `&checkin=${encodeURIComponent(checkin)}` +
     `&checkout=${encodeURIComponent(checkout)}` +
     `&type=rooms&is_day_use=false&rooms=${roomsParam}` +
-    `&order=recommended&is_including_occupied=false&mcp_currency=JPY&lang=ja-JP`;
+    `&order=recommended&is_including_occupied=false&mcp_currency=${currency}&lang=ja-JP`;
 }
 
 function loadLastState() {
