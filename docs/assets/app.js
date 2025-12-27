@@ -470,116 +470,114 @@ const app = {
 
     async saveConfig() {
         try {
-    async saveConfig() {
-                try {
-                    const datesInput = document.getElementById('datesInput');
-                    // 從 Flatpickr 取得值 (字串，逗號分隔)
-                    // 但為了保險，我們重新讀取 value 並 split，或者如果 flatpickr 實例還在... 
-                    // 簡單做法：Flatpickr 會把 formatted date 填入 input.value (以 ", " 分隔)
-                    const datesText = datesInput.value;
-                    const dates = datesText.split(',').map(d => d.trim()).filter(d => d).sort();
+            const datesInput = document.getElementById('datesInput');
+            // 從 Flatpickr 取得值 (字串，逗號分隔)
+            // 但為了保險，我們重新讀取 value 並 split，或者如果 flatpickr 實例還在... 
+            // 簡單做法：Flatpickr 會把 formatted date 填入 input.value (以 ", " 分隔)
+            const datesText = datesInput.value;
+            const dates = datesText.split(',').map(d => d.trim()).filter(d => d).sort();
 
-                    const keywordsText = document.getElementById('keywordsInput').value;
-                    const keywords = keywordsText.split('\n').map(k => k.trim()).filter(k => k);
+            const keywordsText = document.getElementById('keywordsInput').value;
+            const keywords = keywordsText.split('\n').map(k => k.trim()).filter(k => k);
 
-                    const scheduleSelect = document.getElementById('scheduleInput');
-                    const cron = scheduleSelect.value === 'custom'
-                        ? document.getElementById('customCronInput').value.trim()
-                        : scheduleSelect.value;
+            const scheduleSelect = document.getElementById('scheduleInput');
+            const cron = scheduleSelect.value === 'custom'
+                ? document.getElementById('customCronInput').value.trim()
+                : scheduleSelect.value;
 
-                    const url = document.getElementById('hotelUrlInput').value.trim();
-                    let code = document.getElementById('hotelCodeInput').value.trim();
-                    try {
-                        if (url) {
-                            const urlObj = new URL(url);
-                            if (urlObj.searchParams.has('code')) {
-                                code = urlObj.searchParams.get('code');
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('無法解析網址:', e);
+            const url = document.getElementById('hotelUrlInput').value.trim();
+            let code = document.getElementById('hotelCodeInput').value.trim();
+            try {
+                if (url) {
+                    const urlObj = new URL(url);
+                    if (urlObj.searchParams.has('code')) {
+                        code = urlObj.searchParams.get('code');
                     }
-
-                    const dateRegex = /^\d{4}\/\d{2}\/\d{2}$/;
-                    const invalidDates = dates.filter(d => !dateRegex.test(d));
-                    if (invalidDates.length > 0) {
-                        this.showToast(`❌ 日期格式錯誤：${invalidDates.join(', ')}\\n請使用 YYYY/MM/DD 格式`, 'error');
-                        return;
-                    }
-
-                    const newConfig = {
-                        ...this.config.content,
-                        hotel: {
-                            name: document.getElementById('hotelNameInput').value.trim(),
-                            url: url,
-                            code: code
-                        },
-                        monitoring: {
-                            ...this.config.content.monitoring,
-                            checkinDates: dates,
-                            roomKeywords: keywords,
-                            adults: parseInt(document.getElementById('adultsInput').value),
-                            currency: document.getElementById('currencyInput').value
-                        },
-                        schedule: {
-                            ...this.config.content.schedule,
-                            cron: cron
-                        }
-                    };
-
-                    this.showToast('⏳ 正在儲存並推送到 GitHub...', 'info');
-                    await this.api.updateFile('config.json', newConfig, 'chore: 更新監控設定', this.config.sha);
-                    this.showToast('✅ 設定已成功儲存並推送至 GitHub！', 'success');
-
-                    setTimeout(() => this.loadData(), 1500);
-                } catch (error) {
-                    console.error('儲存設定失敗:', error);
-                    if (error.message.includes('Bad credentials') || error.message.includes('401')) {
-                        this.showToast('Token 失效，請重新登入', 'error');
-                        localStorage.removeItem('github_config');
-                        setTimeout(() => window.location.reload(), 1500);
-                        return;
-                    }
-                    this.showToast('❌ 儲存失敗: ' + error.message, 'error');
                 }
-            },
+            } catch (e) {
+                console.warn('無法解析網址:', e);
+            }
+
+            const dateRegex = /^\d{4}\/\d{2}\/\d{2}$/;
+            const invalidDates = dates.filter(d => !dateRegex.test(d));
+            if (invalidDates.length > 0) {
+                this.showToast(`❌ 日期格式錯誤：${invalidDates.join(', ')}\\n請使用 YYYY/MM/DD 格式`, 'error');
+                return;
+            }
+
+            const newConfig = {
+                ...this.config.content,
+                hotel: {
+                    name: document.getElementById('hotelNameInput').value.trim(),
+                    url: url,
+                    code: code
+                },
+                monitoring: {
+                    ...this.config.content.monitoring,
+                    checkinDates: dates,
+                    roomKeywords: keywords,
+                    adults: parseInt(document.getElementById('adultsInput').value),
+                    currency: document.getElementById('currencyInput').value
+                },
+                schedule: {
+                    ...this.config.content.schedule,
+                    cron: cron
+                }
+            };
+
+            this.showToast('⏳ 正在儲存並推送到 GitHub...', 'info');
+            await this.api.updateFile('config.json', newConfig, 'chore: 更新監控設定', this.config.sha);
+            this.showToast('✅ 設定已成功儲存並推送至 GitHub！', 'success');
+
+            setTimeout(() => this.loadData(), 1500);
+        } catch (error) {
+            console.error('儲存設定失敗:', error);
+            if (error.message.includes('Bad credentials') || error.message.includes('401')) {
+                this.showToast('Token 失效，請重新登入', 'error');
+                localStorage.removeItem('github_config');
+                setTimeout(() => window.location.reload(), 1500);
+                return;
+            }
+            this.showToast('❌ 儲存失敗: ' + error.message, 'error');
+        }
+    },
 
     async triggerRun() {
-                try {
-                    this.showToast('⏳ 正在觸發執行...', 'info');
-                    await this.api.triggerWorkflow();
-                    this.showToast('✅ 已觸發，系統將自動檢查執行狀態...', 'success');
-                    // 立即開始輪詢狀態
-                    setTimeout(() => this.checkWorkflowStatus(), 2000);
-                } catch (error) {
-                    console.error('觸發執行失敗:', error);
-                    if (error.message.includes('Forbidden') || error.message.includes('403')) {
-                        this.showToast('❌ 權限不足：請確認 Token 具有 Workflow 權限', 'error');
-                        return;
-                    }
-                    this.showToast('❌ 觸發失敗: ' + error.message, 'error');
-                }
-            },
-
-            showToast(message, type = 'info') {
-                const toast = document.getElementById('toast');
-                const colors = {
-                    success: 'bg-green-600',
-                    error: 'bg-red-600',
-                    info: 'bg-blue-600'
-                };
-
-                toast.className = `fixed bottom-4 right-4 px-6 py-4 rounded-lg shadow-2xl text-white transform transition-all duration-300 z-50 ${colors[type]}`;
-                toast.textContent = message;
-                toast.style.transform = 'translateY(0)';
-                toast.style.opacity = '1';
-
-                setTimeout(() => {
-                    toast.style.transform = 'translateY(5rem)';
-                    toast.style.opacity = '0';
-                }, 4000);
+        try {
+            this.showToast('⏳ 正在觸發執行...', 'info');
+            await this.api.triggerWorkflow();
+            this.showToast('✅ 已觸發，系統將自動檢查執行狀態...', 'success');
+            // 立即開始輪詢狀態
+            setTimeout(() => this.checkWorkflowStatus(), 2000);
+        } catch (error) {
+            console.error('觸發執行失敗:', error);
+            if (error.message.includes('Forbidden') || error.message.includes('403')) {
+                this.showToast('❌ 權限不足：請確認 Token 具有 Workflow 權限', 'error');
+                return;
             }
+            this.showToast('❌ 觸發失敗: ' + error.message, 'error');
+        }
+    },
+
+    showToast(message, type = 'info') {
+        const toast = document.getElementById('toast');
+        const colors = {
+            success: 'bg-green-600',
+            error: 'bg-red-600',
+            info: 'bg-blue-600'
         };
 
-        // 啟動應用
-        document.addEventListener('DOMContentLoaded', () => app.init());
+        toast.className = `fixed bottom-4 right-4 px-6 py-4 rounded-lg shadow-2xl text-white transform transition-all duration-300 z-50 ${colors[type]}`;
+        toast.textContent = message;
+        toast.style.transform = 'translateY(0)';
+        toast.style.opacity = '1';
+
+        setTimeout(() => {
+            toast.style.transform = 'translateY(5rem)';
+            toast.style.opacity = '0';
+        }, 4000);
+    }
+};
+
+// 啟動應用
+document.addEventListener('DOMContentLoaded', () => app.init());
