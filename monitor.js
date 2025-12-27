@@ -173,11 +173,21 @@ async function checkAllDates() {
   const lastState = loadLastState();
   const notifications = [];
 
-  for (let i = 0; i < CHECKIN_DATES.length - 1; i++) {
-    const checkin = CHECKIN_DATES[i];
-    const checkout = CHECKIN_DATES[i + 1];
+  // 輔助函式：計算隔天日期 (YYYY/MM/DD)
+  function getNextDay(dateStr) {
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() + 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const da = String(d.getDate()).padStart(2, '0');
+    return `${y}/${m}/${da}`;
+  }
 
-    console.log(`\n🔍 [${i + 1}/${CHECKIN_DATES.length - 1}] 正在檢查 ${checkin} ~ ${checkout} ...`);
+  for (let i = 0; i < CHECKIN_DATES.length; i++) {
+    const checkin = CHECKIN_DATES[i];
+    const checkout = getNextDay(checkin);
+
+    console.log(`\n🔍 [${i + 1}/${CHECKIN_DATES.length}] 正在檢查 ${checkin} ~ ${checkout} ...`);
 
     let data = null;
     // 策略：優先嘗試 JPY，若失敗則嘗試 TWD
