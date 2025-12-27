@@ -25,7 +25,9 @@ class GitHubAPI {
     initialize(owner, repo, token) {
         this.owner = owner;
         this.repo = repo;
-        this.octokit = new window.Octokit.Octokit({ auth: token });
+        // 使用 Octokit.Octokit (UMD bundle 的全域變數)
+        const OctokitClass = window.Octokit?.Octokit || window.Octokit;
+        this.octokit = new OctokitClass({ auth: token });
     }
 
     isConfigured() {
