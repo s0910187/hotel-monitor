@@ -15,8 +15,8 @@
     "currency": "JPY"
   },
   "2026/04/20": {
-    "isAvailable": true,
-    "price": 43120,
-    "currency": "JPY"
+    "isAvailable": false,
+    "price": null,
+    "currency": null
   }
 }
