@@ -25,8 +25,19 @@ class GitHubAPI {
     initialize(owner, repo, token) {
         this.owner = owner;
         this.repo = repo;
-        // Octokit v18 UMD bundle: window.Octokit 直接是建構函式
-        this.octokit = new window.Octokit({ auth: token });
+        
+        // Octokit v18 可能的引用方式（容錯處理）
+        const OctokitConstructor = 
+            window.Octokit?.Octokit ||  // 嘗試 Octokit.Octokit
+            window.Octokit?.rest?.Octokit ||  // 嘗試 Octokit.rest.Octokit
+            window.OctokitRest?.Octokit ||  // 嘗試 OctokitRest.Octokit
+            window.Octokit;  // 最後嘗試直接使用 Octokit
+            
+        if (!OctokitConstructor) {
+            throw new Error('無法載入 Octokit 函式庫，請重新整理頁面');
+        }
+        
+        this.octokit = new OctokitConstructor({ auth: token });
     }
 
     isConfigured() {
