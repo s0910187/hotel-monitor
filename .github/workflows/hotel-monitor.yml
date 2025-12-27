@@ -55,16 +55,9 @@ jobs:
           key: state-${{ github.run_id }}
       
       - name: 提交狀態檔案回 Repository
+        uses: stefanzweifel/git-auto-commit-action@v5
         if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add last_state.json
-          # 檢查是否有變更
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "chore: 更新監控狀態 [skip ci]"
-            # 強制推送到 main 分支
-            git push origin HEAD:main
-          fi
+        with:
+          commit_message: "chore: 更新監控狀態 [skip ci]"
+          file_pattern: last_state.json
+          branch: main
