@@ -12,7 +12,7 @@ const app = {
         if (!this.api.isConfigured()) {
             this.showSetup();
         } else {
-            // 填入既有的設定值（方便修改）
+            // 填入既有的設定值
             if (this.api.owner) document.getElementById('ownerInput').value = this.api.owner;
             if (this.api.repo) document.getElementById('repoInput').value = this.api.repo;
             await this.loadData();
@@ -46,10 +46,8 @@ const app = {
     logout() {
         if (confirm('確定要登出並清除目前的 Token 嗎？')) {
             localStorage.removeItem('github_config');
-            this.api = new GitHubAPI(); // 重置 API 實例
-            document.getElementById('tokenInput').value = ''; // 清空 Token 輸入框
-            this.showToast('已登出，請重新輸入 Token', 'info');
-            this.showSetup();
+            // 強制重新載入頁面，這在 Safari 上最穩定
+            window.location.reload();
         }
     },
 
@@ -74,7 +72,6 @@ const app = {
             await this.loadData();
         } else {
             this.showToast('Token 驗證失敗，請檢查權限或 Token 是否正確', 'error');
-            // 驗證失敗時不清空，讓使用者好修改
         }
     },
 
@@ -82,7 +79,6 @@ const app = {
         try {
             document.getElementById('loadingSpinner').classList.remove('hidden');
 
-            // 讀取 config.json 和 last_state.json
             const [configData, stateData] = await Promise.all([
                 this.api.getFileContent('config.json'),
                 this.api.getFileContent('last_state.json').catch(() => ({ content: {}, sha: null }))
@@ -97,11 +93,10 @@ const app = {
         } catch (error) {
             console.error('載入資料失敗:', error);
 
-            // 處理 401 Bad credentials
             if (error.message.includes('Bad credentials') || error.message.includes('401')) {
                 this.showToast('Token 無效或過期，請重新設定', 'error');
-                localStorage.removeItem('github_config'); // 自動清除無效 Token
-                setTimeout(() => this.showSetup(), 1500); // 延遲後回到設定畫面
+                localStorage.removeItem('github_config');
+                setTimeout(() => window.location.reload(), 1500);
                 return;
             }
 
@@ -110,46 +105,66 @@ const app = {
     },
 
     renderDashboard() {
-        // 渲染狀態卡片
+        // 渲染狀態卡片區域
         const cardsContainer = document.getElementById('statusCards');
-        cardsContainer.innerHTML = '';
 
-        const dates = Object.keys(this.lastState);
+        // 移除現有的 grid class，改用自定義容器
+        cardsContainer.className = 'bg-white rounded-[2rem] p-8 shadow-sm';
+
+        const dates = Object.keys(this.lastState).sort();
+
+        // 取得更新時間與房型資訊
+        // 假設 lastState 中有 metadata，如果沒有就用當前時間
+        // 為了符合截圖樣式，我們需要一個標題列
+        const adults = this.config?.content?.monitoring?.adults || '?';
+        const now = new Date();
+        const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+
+        let html = `
+            <div class="flex justify-between items-center mb-8">
+                <h2 class="text-2xl font-bold text-gray-800">精確房價監控 (${adults}人房)</h2>
+                <div class="text-right">
+                    <div class="text-xs text-gray-400 font-bold tracking-widest uppercase mb-1">LAST CHECK</div>
+                    <div class="text-xl font-bold text-blue-600 font-mono tracking-wider">${timeString}</div>
+                </div>
+            </div>
+            <div class="flex flex-wrap gap-4 justify-start">
+        `;
+
         if (dates.length === 0) {
-            cardsContainer.innerHTML = '<p class="text-gray-500 col-span-3">尚無監控資料，請點擊右上角「手動執行」進行第一次查詢。</p>';
-            return;
+            html += '<p class="text-gray-500 w-full text-center py-8">尚無監控資料，請點擊右上角「手動執行」進行第一次查詢。</p>';
+        } else {
+            dates.forEach(date => {
+                const info = this.lastState[date];
+                // 格式化日期：2026/04/17 -> 04/17
+                const shortDate = date.split('/').slice(1).join('/');
+
+                const isAvailable = info.isAvailable;
+                // 滿室樣式
+                const statusIcon = isAvailable ? '' : `<svg class="w-8 h-8 text-red-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M6 18L18 6M6 6l12 12"></path></svg>`;
+                const statusText = isAvailable ?
+                    `<span class="text-2xl font-bold text-green-600">有空房</span>` :
+                    `<div class="flex items-center justify-center"><span class="text-2xl font-bold text-red-600">❌ 滿室</span></div>`; // 使用 emoji 模擬 X
+
+                const priceClass = isAvailable ? 'text-blue-600' : 'text-gray-300';
+                const currency = info.currency === 'JPY' ? '¥' : (info.currency === 'TWD' ? 'NT$' : '');
+                const priceDisplay = info.price ? `${currency}${info.price.toLocaleString()}` : '----';
+
+                html += `
+                    <div class="border-2 border-slate-100 rounded-[1.5rem] p-6 w-40 flex flex-col items-center justify-center bg-slate-50/50">
+                        <div class="text-sm text-slate-500 font-bold mb-4">${shortDate} 入住</div>
+                        <div class="mb-4">${statusText}</div>
+                        <div class="text-lg font-bold ${priceClass} font-mono tracking-wide">${priceDisplay}</div>
+                    </div>
+                `;
+            });
         }
 
-        dates.forEach(date => {
-            const info = this.lastState[date];
-            const card = this.createPriceCard(date, info);
-            cardsContainer.appendChild(card);
-        });
+        html += '</div>'; // 關閉 flex container
+        cardsContainer.innerHTML = html;
 
         // 渲染趨勢圖
         this.renderChart();
-    },
-
-    createPriceCard(date, info) {
-        const div = document.createElement('div');
-        div.className = 'bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition';
-
-        const isAvailable = info.isAvailable;
-        const statusColor = isAvailable ? 'text-green-600' : 'text-red-600';
-        const statusBg = isAvailable ? 'bg-green-50' : 'bg-red-50';
-        const statusIcon = isAvailable ? '✅' : '❌';
-        const statusText = isAvailable ? '有空房' : '滿房';
-
-        const currencySymbol = info.currency === 'JPY' ? '¥' : (info.currency === 'TWD' ? 'NT$' : '');
-        const priceText = info.price ? `${currencySymbol}${info.price.toLocaleString()}` : '未知';
-
-        div.innerHTML = `
-            <div class="text-sm text-gray-500 mb-2">📅 ${date}</div>
-            <div class="text-2xl font-bold ${statusColor} mb-2 ${statusBg} px-3 py-2 rounded">${statusIcon} ${statusText}</div>
-            <div class="text-xl font-semibold text-gray-800">${priceText}</div>
-        `;
-
-        return div;
     },
 
     renderChart() {
@@ -168,36 +183,74 @@ const app = {
             data: {
                 labels: dates,
                 datasets: [{
-                    label: '房價 (¥)',
+                    label: '房價趨勢',
                     data: prices,
                     borderColor: 'rgb(59, 130, 246)',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    tension: 0.1
+                    borderWidth: 3,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: 'rgb(59, 130, 246)',
+                    pointBorderWidth: 2,
+                    tension: 0.4,
+                    fill: true
                 }]
             },
             options: {
                 responsive: true,
                 plugins: {
                     legend: {
-                        display: true
+                        display: false
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                        titleColor: '#1e293b',
+                        bodyColor: '#1e293b',
+                        borderColor: '#e2e8f0',
+                        borderWidth: 1,
+                        padding: 10,
+                        displayColors: false
                     }
                 },
                 scales: {
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            font: {
+                                size: 12
+                            }
+                        }
+                    },
                     y: {
+                        border: {
+                            display: false
+                        },
+                        grid: {
+                            color: '#f1f5f9'
+                        },
                         beginAtZero: false
                     }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
                 }
             }
         });
     },
 
     renderConfigForm() {
+        // ... (保持不變)
         const form = document.getElementById('configForm');
         if (!form || !this.config) return;
 
         const keywords = this.config.content.monitoring.roomKeywords || [];
 
-        // 先建立 HTML 結構（不包含可能有問題的文字內容）
         form.innerHTML = `
             <!-- 飯店資訊 -->
             <div class="bg-gray-50 p-6 rounded-lg mb-6 border-l-4 border-blue-500">
@@ -214,7 +267,6 @@ const app = {
                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                         <p class="text-xs text-gray-500 mt-1">💡 例如：https://reserve.daiwaroynet.jp/zh-tw/booking/result?code=... (系統會自動從網址擷取飯店代碼)</p>
                     </div>
-                    <!-- 隱藏飯店代碼欄位，改由系統自動從網址擷取 -->
                     <input type="hidden" id="hotelCodeInput">
                 </div>
             </div>
@@ -292,7 +344,7 @@ const app = {
             </div>
         `;
 
-        // HTML 結構建立後，再用 DOM API 設定值（避免編碼問題）
+        // 重新綁定值
         document.getElementById('hotelNameInput').value = this.config.content.hotel.name;
         document.getElementById('hotelUrlInput').value = this.config.content.hotel.url;
         document.getElementById('hotelCodeInput').value = this.config.content.hotel.code;
@@ -302,7 +354,7 @@ const app = {
         document.getElementById('currencyInput').value = this.config.content.monitoring.currency;
         document.getElementById('customCronInput').value = this.config.content.schedule.cron;
 
-        // 設定 Cron 下拉選單預設值
+        // Cron select logic
         const scheduleSelect = document.getElementById('scheduleInput');
         const currentCron = this.config.content.schedule.cron;
         const option = Array.from(scheduleSelect.options).find(opt => opt.value === currentCron);
@@ -314,7 +366,7 @@ const app = {
             document.getElementById('customCronInput').value = currentCron;
         }
 
-        // 監聽排程變更
+        // Event listeners (copied from original)
         scheduleSelect.addEventListener('change', (e) => {
             const customDiv = document.getElementById('customCronDiv');
             const hint = document.getElementById('scheduleHint');
@@ -344,6 +396,7 @@ const app = {
         });
     },
 
+    // ... (saveConfig, triggerRun, showToast 保持不變)
     async saveConfig() {
         try {
             const datesText = document.getElementById('datesInput').value;
@@ -365,8 +418,6 @@ const app = {
                     const urlObj = new URL(url);
                     if (urlObj.searchParams.has('code')) {
                         code = urlObj.searchParams.get('code');
-                        console.log('自動解析飯店代碼:', code);
-                        this.showToast('ℹ️ 已自動從網址更新飯店代碼', 'info');
                     }
                 }
             } catch (e) {
@@ -411,11 +462,10 @@ const app = {
             setTimeout(() => this.loadData(), 1500);
         } catch (error) {
             console.error('儲存設定失敗:', error);
-            // 也處理儲存時可能的 401 錯誤
             if (error.message.includes('Bad credentials') || error.message.includes('401')) {
                 this.showToast('Token 失效，請重新登入', 'error');
                 localStorage.removeItem('github_config');
-                setTimeout(() => this.showSetup(), 1500);
+                setTimeout(() => window.location.reload(), 1500);
                 return;
             }
             this.showToast('❌ 儲存失敗: ' + error.message, 'error');
