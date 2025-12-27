@@ -25,7 +25,7 @@ class GitHubAPI {
     initialize(owner, repo, token) {
         this.owner = owner;
         this.repo = repo;
-        this.octokit = new Octokit.Octokit({ auth: token });
+        this.octokit = new window.Octokit.Octokit({ auth: token });
     }
 
     isConfigured() {
