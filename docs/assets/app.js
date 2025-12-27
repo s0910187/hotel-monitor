@@ -169,6 +169,7 @@ const app = {
 
         const keywords = this.config.content.monitoring.roomKeywords || [];
 
+        // 先建立 HTML 結構（不包含可能有問題的文字內容）
         form.innerHTML = `
             <!-- 飯店資訊 -->
             <div class="bg-gray-50 p-6 rounded-lg mb-6 border-l-4 border-blue-500">
@@ -176,21 +177,17 @@ const app = {
                 <div class="space-y-4">
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-2">飯店名稱</label>
-                        <input type="text" id="hotelNameInput" value="${this.config.content.hotel.name}" 
+                        <input type="text" id="hotelNameInput" 
                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                     </div>
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-2">飯店預訂網址</label>
-                        <input type="url" id="hotelUrlInput" value="${this.config.content.hotel.url}" 
+                        <input type="url" id="hotelUrlInput" 
                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                        <p class="text-xs text-gray-500 mt-1">💡 例如：https://reserve.daiwaroynet.jp</p>
+                        <p class="text-xs text-gray-500 mt-1">💡 例如：https://reserve.daiwaroynet.jp/zh-tw/booking/result?code=...</p>
                     </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">飯店代碼</label>
-                        <input type="text" id="hotelCodeInput" value="${this.config.content.hotel.code}" 
-                               class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition font-mono text-sm">
-                        <p class="text-xs text-gray-500 mt-1">💡 從預訂網址中的 code 參數取得</p>
-                    </div>
+                    <!-- 隱藏飯店代碼欄位，改由系統自動從網址擷取 -->
+                    <input type="hidden" id="hotelCodeInput">
                 </div>
             </div>
 
@@ -201,28 +198,28 @@ const app = {
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-2">監控日期（每行一個）</label>
                         <textarea id="datesInput" rows="6" 
-                                  class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition font-mono text-sm">${this.config.content.monitoring.checkinDates.join('\n')}</textarea>
+                                  class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition font-mono text-sm"></textarea>
                         <p class="text-xs text-gray-500 mt-1">💡 每行輸入一個入住日期，格式：2026/04/17</p>
                     </div>
                     
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-2">房型關鍵字（每行一個）</label>
                         <textarea id="keywordsInput" rows="4" 
-                                  class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition font-mono text-sm">${keywords.join('\n')}</textarea>
+                                  class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition font-mono text-sm"></textarea>
                         <p class="text-xs text-gray-500 mt-1">💡 系統會尋找包含這些關鍵字的房型（例如：四人房、4人房、クアッド）</p>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-2">入住人數</label>
-                            <input type="number" id="adultsInput" value="${this.config.content.monitoring.adults}" min="1" max="10"
+                            <input type="number" id="adultsInput" min="1" max="10"
                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                         </div>
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-2">顯示幣別</label>
                             <select id="currencyInput" class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                                <option value="JPY" ${this.config.content.monitoring.currency === 'JPY' ? 'selected' : ''}>日圓 (JPY / ¥)</option>
-                                <option value="TWD" ${this.config.content.monitoring.currency === 'TWD' ? 'selected' : ''}>台幣 (TWD / NT$)</option>
+                                <option value="JPY">日圓 (JPY / ¥)</option>
+                                <option value="TWD">台幣 (TWD / NT$)</option>
                             </select>
                         </div>
                     </div>
@@ -249,7 +246,7 @@ const app = {
                     
                     <div id="customCronDiv" class="hidden">
                         <label class="block text-sm font-semibold text-gray-700 mb-2">自訂 Cron 表達式</label>
-                        <input type="text" id="customCronInput" value="${this.config.content.schedule.cron}" 
+                        <input type="text" id="customCronInput" 
                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition font-mono text-sm">
                         <p class="text-xs text-gray-500 mt-1">格式：分 時 日 月 週 | <a href="https://crontab.guru" target="_blank" class="text-blue-600 underline hover:text-blue-800">Cron 語法說明</a></p>
                     </div>
@@ -266,6 +263,16 @@ const app = {
                 </button>
             </div>
         `;
+
+        // HTML 結構建立後，再用 DOM API 設定值（避免編碼問題）
+        document.getElementById('hotelNameInput').value = this.config.content.hotel.name;
+        document.getElementById('hotelUrlInput').value = this.config.content.hotel.url;
+        document.getElementById('hotelCodeInput').value = this.config.content.hotel.code;
+        document.getElementById('datesInput').value = this.config.content.monitoring.checkinDates.join('\n');
+        document.getElementById('keywordsInput').value = keywords.join('\n');
+        document.getElementById('adultsInput').value = this.config.content.monitoring.adults;
+        document.getElementById('currencyInput').value = this.config.content.monitoring.currency;
+        document.getElementById('customCronInput').value = this.config.content.schedule.cron;
 
         // 設定 Cron 下拉選單預設值
         const scheduleSelect = document.getElementById('scheduleInput');
@@ -322,6 +329,22 @@ const app = {
                 ? document.getElementById('customCronInput').value.trim()
                 : scheduleSelect.value;
 
+            const url = document.getElementById('hotelUrlInput').value.trim();
+            // 自動從網址解析 code 參數
+            let code = document.getElementById('hotelCodeInput').value.trim();
+            try {
+                if (url) {
+                    const urlObj = new URL(url);
+                    if (urlObj.searchParams.has('code')) {
+                        code = urlObj.searchParams.get('code');
+                        console.log('自動解析飯店代碼:', code);
+                        this.showToast('ℹ️ 已自動從網址更新飯店代碼', 'info');
+                    }
+                }
+            } catch (e) {
+                console.warn('無法解析網址:', e);
+            }
+
             // 驗證日期格式
             const dateRegex = /^\d{4}\/\d{2}\/\d{2}$/;
             const invalidDates = dates.filter(d => !dateRegex.test(d));
@@ -335,8 +358,8 @@ const app = {
                 ...this.config.content,
                 hotel: {
                     name: document.getElementById('hotelNameInput').value.trim(),
-                    url: document.getElementById('hotelUrlInput').value.trim(),
-                    code: document.getElementById('hotelCodeInput').value.trim()
+                    url: url,
+                    code: code
                 },
                 monitoring: {
                     ...this.config.content.monitoring,
