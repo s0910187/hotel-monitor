@@ -46,7 +46,6 @@ const app = {
     logout() {
         if (confirm('確定要登出並清除目前的 Token 嗎？')) {
             localStorage.removeItem('github_config');
-            // 強制重新載入頁面，這在 Safari 上最穩定
             window.location.reload();
         }
     },
@@ -64,7 +63,6 @@ const app = {
         this.api.saveConfig(owner, repo, token);
         this.api.initialize(owner, repo, token);
 
-        // 測試連線
         this.showToast('正在驗證 Token...', 'info');
         const isValid = await this.api.testConnection();
         if (isValid) {
@@ -101,69 +99,135 @@ const app = {
             }
 
             this.showToast('載入資料失敗: ' + error.message, 'error');
+        } finally {
+            // 每次載入資料順便更新 Workflow 狀態
+            this.checkWorkflowStatus();
+        }
+    },
+
+    async checkWorkflowStatus() {
+        try {
+            const statusDiv = document.getElementById('workflowStatus');
+            if (!statusDiv) return;
+
+            // 讀取最近一次執行
+            const runs = await this.api.getWorkflowRuns(1);
+            if (!runs || runs.length === 0) {
+                statusDiv.innerHTML = '⚪️ 尚無執行記錄';
+                return;
+            }
+
+            const run = runs[0];
+            const status = run.status;       // queued, in_progress, completed
+            const conclusion = run.conclusion; // success, failure, neutral, etc.
+            const time = new Date(run.updated_at || run.created_at);
+            const now = new Date();
+            const diffMin = Math.floor((now - time) / 60000);
+
+            let timeText = diffMin < 1 ? '剛剛' : `${diffMin} 分鐘前`;
+            if (diffMin > 60) timeText = `${Math.floor(diffMin / 60)} 小時前`;
+
+            let icon = '⚪️';
+            let text = '未知狀態';
+            let color = 'text-gray-400';
+
+            if (status === 'queued') {
+                icon = '🕒';
+                text = '排隊中...';
+                color = 'text-yellow-500';
+            } else if (status === 'in_progress') {
+                icon = '⏳';
+                text = '執行中...';
+                color = 'text-blue-500';
+            } else if (status === 'completed') {
+                if (conclusion === 'success') {
+                    icon = '🟢';
+                    text = '執行成功';
+                    color = 'text-green-500';
+                } else if (conclusion === 'failure') {
+                    icon = '🔴';
+                    text = '執行失敗';
+                    color = 'text-red-500';
+                } else {
+                    icon = '⚪️';
+                    text = conclusion || '已完成';
+                }
+            }
+
+            // 點擊前往查看 Log
+            const runUrl = run.html_url;
+            statusDiv.innerHTML = `<a href="${runUrl}" target="_blank" class="${color} hover:underline font-bold">${icon} 最新狀態: ${text} (${timeText})</a>`;
+            statusDiv.title = `Run ID: ${run.id}\nUpdated: ${time.toLocaleString()}`;
+
+            // 如果正在執行，自動輪詢
+            if (status === 'in_progress' || status === 'queued') {
+                setTimeout(() => this.checkWorkflowStatus(), 5000);
+            }
+
+        } catch (error) {
+            console.warn('檢查 Workflow 狀態失敗:', error);
+            const statusDiv = document.getElementById('workflowStatus');
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-red-400">⚠️ 無法取得狀態 (請檢查 Token 權限)</span>';
         }
     },
 
     renderDashboard() {
-        // 渲染狀態卡片區域
         const cardsContainer = document.getElementById('statusCards');
 
-        // 移除現有的 grid class，改用自定義容器
-        cardsContainer.className = 'bg-white rounded-[2rem] p-8 shadow-sm';
+        cardsContainer.className = 'flex flex-wrap gap-6 justify-center md:justify-start';
 
         const dates = Object.keys(this.lastState).sort();
 
-        // 取得更新時間與房型資訊
-        // 假設 lastState 中有 metadata，如果沒有就用當前時間
-        // 為了符合截圖樣式，我們需要一個標題列
         const adults = this.config?.content?.monitoring?.adults || '?';
         const now = new Date();
         const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
 
         let html = `
-            <div class="flex justify-between items-center mb-8">
+            <div class="w-full flex justify-between items-center mb-8 px-2">
                 <h2 class="text-2xl font-bold text-gray-800">精確房價監控 (${adults}人房)</h2>
                 <div class="text-right">
                     <div class="text-xs text-gray-400 font-bold tracking-widest uppercase mb-1">LAST CHECK</div>
                     <div class="text-xl font-bold text-blue-600 font-mono tracking-wider">${timeString}</div>
                 </div>
             </div>
-            <div class="flex flex-wrap gap-4 justify-start">
+            <div class="w-full flex flex-wrap gap-4 justify-start">
         `;
 
         if (dates.length === 0) {
-            html += '<p class="text-gray-500 w-full text-center py-8">尚無監控資料，請點擊右上角「手動執行」進行第一次查詢。</p>';
+            html += `
+                <div class="w-full text-center py-12 bg-white rounded-[2rem] shadow-sm border-2 border-dashed border-gray-200">
+                    <p class="text-gray-500 text-lg mb-2">👋 尚無監控資料</p>
+                    <p class="text-gray-400 text-sm">請確認這不是第一次使用，或者檢查右上角的執行狀態。</p>
+                </div>
+            `;
         } else {
             dates.forEach(date => {
                 const info = this.lastState[date];
-                // 格式化日期：2026/04/17 -> 04/17
                 const shortDate = date.split('/').slice(1).join('/');
 
                 const isAvailable = info.isAvailable;
-                // 滿室樣式
                 const statusIcon = isAvailable ? '' : `<svg class="w-8 h-8 text-red-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M6 18L18 6M6 6l12 12"></path></svg>`;
                 const statusText = isAvailable ?
                     `<span class="text-2xl font-bold text-green-600">有空房</span>` :
-                    `<div class="flex items-center justify-center"><span class="text-2xl font-bold text-red-600">❌ 滿室</span></div>`; // 使用 emoji 模擬 X
+                    `<div class="flex items-center justify-center"><span class="text-2xl font-bold text-red-600">❌ 滿室</span></div>`;
 
                 const priceClass = isAvailable ? 'text-blue-600' : 'text-gray-300';
                 const currency = info.currency === 'JPY' ? '¥' : (info.currency === 'TWD' ? 'NT$' : '');
                 const priceDisplay = info.price ? `${currency}${info.price.toLocaleString()}` : '----';
 
                 html += `
-                    <div class="border-2 border-slate-100 rounded-[1.5rem] p-6 w-40 flex flex-col items-center justify-center bg-slate-50/50">
-                        <div class="text-sm text-slate-500 font-bold mb-4">${shortDate} 入住</div>
-                        <div class="mb-4">${statusText}</div>
+                    <div class="border-2 border-slate-100 rounded-[1.5rem] p-6 w-40 flex flex-col items-center justify-center bg-white shadow-sm hover:shadow-md transition cursor-default">
+                        <div class="text-sm text-slate-500 font-bold mb-4 bg-slate-100 px-3 py-1 rounded-full">${shortDate} 入住</div>
+                        <div class="mb-4 text-center h-10 flex items-center">${statusText}</div>
                         <div class="text-lg font-bold ${priceClass} font-mono tracking-wide">${priceDisplay}</div>
                     </div>
                 `;
             });
         }
 
-        html += '</div>'; // 關閉 flex container
+        html += '</div>';
         cardsContainer.innerHTML = html;
 
-        // 渲染趨勢圖
         this.renderChart();
     },
 
@@ -188,64 +252,61 @@ const app = {
                     borderColor: 'rgb(59, 130, 246)',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     borderWidth: 3,
-                    pointRadius: 4,
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
                     pointBackgroundColor: '#fff',
                     pointBorderColor: 'rgb(59, 130, 246)',
                     pointBorderWidth: 2,
                     tension: 0.4,
-                    fill: true
+                    fill: true,
+                    spanGaps: true
                 }]
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        display: false
-                    },
+                    legend: { display: false },
                     tooltip: {
                         mode: 'index',
                         intersect: false,
-                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
                         titleColor: '#1e293b',
                         bodyColor: '#1e293b',
                         borderColor: '#e2e8f0',
                         borderWidth: 1,
-                        padding: 10,
-                        displayColors: false
+                        padding: 12,
+                        displayColors: false,
+                        callbacks: {
+                            label: function (context) {
+                                return `¥${context.parsed.y.toLocaleString()}`;
+                            }
+                        }
                     }
                 },
                 scales: {
                     x: {
-                        grid: {
-                            display: false
-                        },
-                        ticks: {
-                            font: {
-                                size: 12
-                            }
-                        }
+                        grid: { display: false },
+                        ticks: { font: { size: 12 } }
                     },
                     y: {
-                        border: {
-                            display: false
-                        },
-                        grid: {
-                            color: '#f1f5f9'
-                        },
-                        beginAtZero: false
+                        border: { display: false },
+                        grid: { color: '#f1f5f9' },
+                        beginAtZero: false,
+                        ticks: {
+                            callback: function (value) {
+                                return '¥' + value.toLocaleString();
+                            }
+                        }
                     }
-                },
-                interaction: {
-                    mode: 'nearest',
-                    axis: 'x',
-                    intersect: false
                 }
             }
         });
+
+        ctx.style.height = '300px';
     },
 
     renderConfigForm() {
-        // ... (保持不變)
         const form = document.getElementById('configForm');
         if (!form || !this.config) return;
 
@@ -344,7 +405,6 @@ const app = {
             </div>
         `;
 
-        // 重新綁定值
         document.getElementById('hotelNameInput').value = this.config.content.hotel.name;
         document.getElementById('hotelUrlInput').value = this.config.content.hotel.url;
         document.getElementById('hotelCodeInput').value = this.config.content.hotel.code;
@@ -354,7 +414,6 @@ const app = {
         document.getElementById('currencyInput').value = this.config.content.monitoring.currency;
         document.getElementById('customCronInput').value = this.config.content.schedule.cron;
 
-        // Cron select logic
         const scheduleSelect = document.getElementById('scheduleInput');
         const currentCron = this.config.content.schedule.cron;
         const option = Array.from(scheduleSelect.options).find(opt => opt.value === currentCron);
@@ -366,7 +425,6 @@ const app = {
             document.getElementById('customCronInput').value = currentCron;
         }
 
-        // Event listeners (copied from original)
         scheduleSelect.addEventListener('change', (e) => {
             const customDiv = document.getElementById('customCronDiv');
             const hint = document.getElementById('scheduleHint');
@@ -396,7 +454,6 @@ const app = {
         });
     },
 
-    // ... (saveConfig, triggerRun, showToast 保持不變)
     async saveConfig() {
         try {
             const datesText = document.getElementById('datesInput').value;
@@ -411,7 +468,6 @@ const app = {
                 : scheduleSelect.value;
 
             const url = document.getElementById('hotelUrlInput').value.trim();
-            // 自動從網址解析 code 參數
             let code = document.getElementById('hotelCodeInput').value.trim();
             try {
                 if (url) {
@@ -424,7 +480,6 @@ const app = {
                 console.warn('無法解析網址:', e);
             }
 
-            // 驗證日期格式
             const dateRegex = /^\d{4}\/\d{2}\/\d{2}$/;
             const invalidDates = dates.filter(d => !dateRegex.test(d));
             if (invalidDates.length > 0) {
@@ -432,7 +487,6 @@ const app = {
                 return;
             }
 
-            // 更新 config
             const newConfig = {
                 ...this.config.content,
                 hotel: {
@@ -453,12 +507,10 @@ const app = {
                 }
             };
 
-            // 推送到 GitHub
             this.showToast('⏳ 正在儲存並推送到 GitHub...', 'info');
             await this.api.updateFile('config.json', newConfig, 'chore: 更新監控設定', this.config.sha);
             this.showToast('✅ 設定已成功儲存並推送至 GitHub！', 'success');
 
-            // 重新載入
             setTimeout(() => this.loadData(), 1500);
         } catch (error) {
             console.error('儲存設定失敗:', error);
@@ -476,7 +528,9 @@ const app = {
         try {
             this.showToast('⏳ 正在觸發執行...', 'info');
             await this.api.triggerWorkflow();
-            this.showToast('✅ 已成功觸發執行！請等待 2-3 分鐘後點擊「重新整理」查看結果', 'success');
+            this.showToast('✅ 已觸發，系統將自動檢查執行狀態...', 'success');
+            // 立即開始輪詢狀態
+            setTimeout(() => this.checkWorkflowStatus(), 2000);
         } catch (error) {
             console.error('觸發執行失敗:', error);
             if (error.message.includes('Forbidden') || error.message.includes('403')) {
@@ -495,7 +549,7 @@ const app = {
             info: 'bg-blue-600'
         };
 
-        toast.className = `fixed bottom-4 right-4 px-6 py-4 rounded-lg shadow-2xl text-white transform transition-all duration-300 ${colors[type]}`;
+        toast.className = `fixed bottom-4 right-4 px-6 py-4 rounded-lg shadow-2xl text-white transform transition-all duration-300 z-50 ${colors[type]}`;
         toast.textContent = message;
         toast.style.transform = 'translateY(0)';
         toast.style.opacity = '1';

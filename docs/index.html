@@ -11,25 +11,35 @@
 
 <body class="bg-gray-100">
     <!-- 導航列 -->
-    <nav class="bg-white shadow-lg">
+    <nav class="bg-white shadow-lg sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-4">
-            <div class="flex justify-between h-16">
+            <div class="flex justify-between h-20">
                 <div class="flex items-center">
                     <h1 class="text-xl font-bold text-gray-800">🏨 飯店監控管理系統</h1>
                 </div>
-                <div class="flex items-center space-x-4">
-                    <button id="refreshBtn"
-                        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition">
-                        🔄 重新整理
-                    </button>
-                    <button id="manualRunBtn"
-                        class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition">
-                        ▶️ 手動執行
-                    </button>
-                    <button id="logoutBtn" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition"
-                        title="清除 Token 並重新登入">
-                        🚪 登出
-                    </button>
+                <!-- 右側操作區：按鈕 + 狀態顯示 -->
+                <div class="flex flex-col justify-center items-end">
+                    <div class="flex items-center space-x-2 md:space-x-4">
+                        <button id="refreshBtn"
+                            class="px-3 py-1.5 md:px-4 md:py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition text-sm md:text-base">
+                            🔄 重新整理
+                        </button>
+                        <button id="manualRunBtn"
+                            class="px-3 py-1.5 md:px-4 md:py-2 bg-green-500 text-white rounded hover:bg-green-600 transition text-sm md:text-base">
+                            ▶️ 手動執行
+                        </button>
+                        <button id="logoutBtn"
+                            class="px-3 py-1.5 md:px-4 md:py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition text-sm md:text-base"
+                            title="清除 Token 並重新登入">
+                            🚪 登出
+                        </button>
+                    </div>
+                    <!-- Workflow 執行狀態 -->
+                    <div id="workflowStatus"
+                        class="text-xs font-mono mt-1 text-gray-400 cursor-pointer hover:text-blue-500 transition"
+                        title="點擊查看最近一次執行詳情">
+                        <!-- 狀態會顯示在這裡，例如：🟢 最新執行: 成功 (2分鐘前) -->
+                    </div>
                 </div>
             </div>
         </div>
@@ -80,19 +90,19 @@
         <!-- 儀表板 -->
         <div id="dashboardSection" class="hidden space-y-6">
             <!-- 狀態卡片 -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="statusCards">
+            <div id="statusCards">
                 <!-- 動態生成 -->
             </div>
 
             <!-- 趨勢圖表 -->
-            <div class="bg-white rounded-lg shadow-md p-6">
-                <h2 class="text-xl font-bold mb-4">📈 房價趨勢</h2>
+            <div class="bg-white rounded-[2rem] p-8 shadow-sm">
+                <h2 class="text-xl font-bold mb-6 text-gray-800">📈 房價趨勢</h2>
                 <canvas id="priceChart"></canvas>
             </div>
 
             <!-- 設定區 -->
-            <div class="bg-white rounded-lg shadow-md p-6">
-                <h2 class="text-xl font-bold mb-4">⚙️ 監控設定</h2>
+            <div class="bg-white rounded-[2rem] p-8 shadow-sm">
+                <h2 class="text-xl font-bold mb-6 text-gray-800">⚙️ 監控設定</h2>
                 <div id="configForm" class="space-y-4">
                     <!-- 動態生成 -->
                 </div>
@@ -108,7 +118,7 @@
 
     <!-- Toast 通知 -->
     <div id="toast"
-        class="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 translate-y-20 opacity-0">
+        class="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 translate-y-20 opacity-0 z-50">
     </div>
 
     <script src="assets/github-api.js"></script>
