@@ -1,7 +1,7 @@
-// GitHub API 整合模組
+// GitHub API 整合模組（使用原生 fetch API）
 class GitHubAPI {
     constructor() {
-        this.octokit = null;
+        this.token = null;
         this.owner = null;
         this.repo = null;
         this.config = this.loadConfig();
@@ -25,31 +25,43 @@ class GitHubAPI {
     initialize(owner, repo, token) {
         this.owner = owner;
         this.repo = repo;
-        
-        // Octokit v18 可能的引用方式（容錯處理）
-        const OctokitConstructor = 
-            window.Octokit?.Octokit ||  // 嘗試 Octokit.Octokit
-            window.Octokit?.rest?.Octokit ||  // 嘗試 Octokit.rest.Octokit
-            window.OctokitRest?.Octokit ||  // 嘗試 OctokitRest.Octokit
-            window.Octokit;  // 最後嘗試直接使用 Octokit
-            
-        if (!OctokitConstructor) {
-            throw new Error('無法載入 Octokit 函式庫，請重新整理頁面');
-        }
-        
-        this.octokit = new OctokitConstructor({ auth: token });
+        this.token = token;
     }
 
     isConfigured() {
-        return !!this.octokit;
+        return !!this.token;
+    }
+
+    async _request(method, endpoint, body = null) {
+        const url = `https://api.github.com${endpoint}`;
+        const headers = {
+            'Authorization': `token ${this.token}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+        };
+
+        const options = {
+            method,
+            headers
+        };
+
+        if (body && (method === 'POST' || method === 'PUT')) {
+            options.body = JSON.stringify(body);
+        }
+
+        const response = await fetch(url, options);
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ message: response.statusText }));
+            throw new Error(error.message || `GitHub API Error: ${response.status}`);
+        }
+
+        return response.json();
     }
 
     async testConnection() {
         try {
-            await this.octokit.rest.repos.get({
-                owner: this.owner,
-                repo: this.repo
-            });
+            await this._request('GET', `/repos/${this.owner}/${this.repo}`);
             return true;
         } catch (error) {
             console.error('連線測試失敗:', error);
@@ -59,16 +71,11 @@ class GitHubAPI {
 
     async getFileContent(path) {
         try {
-            const response = await this.octokit.rest.repos.getContent({
-                owner: this.owner,
-                repo: this.repo,
-                path: path
-            });
-
-            const content = atob(response.data.content);
+            const data = await this._request('GET', `/repos/${this.owner}/${this.repo}/contents/${path}`);
+            const content = atob(data.content.replace(/\n/g, ''));
             return {
                 content: JSON.parse(content),
-                sha: response.data.sha
+                sha: data.sha
             };
         } catch (error) {
             console.error(`讀取檔案失敗 (${path}):`, error);
@@ -78,15 +85,12 @@ class GitHubAPI {
 
     async updateFile(path, content, message, sha) {
         try {
-            const response = await this.octokit.rest.repos.createOrUpdateFileContents({
-                owner: this.owner,
-                repo: this.repo,
-                path: path,
+            const data = await this._request('PUT', `/repos/${this.owner}/${this.repo}/contents/${path}`, {
                 message: message,
-                content: btoa(JSON.stringify(content, null, 2)),
+                content: btoa(unescape(encodeURIComponent(JSON.stringify(content, null, 2)))),
                 sha: sha
             });
-            return response.data;
+            return data;
         } catch (error) {
             console.error(`更新檔案失敗 (${path}):`, error);
             throw error;
@@ -95,10 +99,7 @@ class GitHubAPI {
 
     async triggerWorkflow() {
         try {
-            await this.octokit.rest.actions.createWorkflowDispatch({
-                owner: this.owner,
-                repo: this.repo,
-                workflow_id: 'hotel-monitor.yml',
+            await this._request('POST', `/repos/${this.owner}/${this.repo}/actions/workflows/hotel-monitor.yml/dispatches`, {
                 ref: 'main'
             });
             return true;
@@ -110,12 +111,8 @@ class GitHubAPI {
 
     async getWorkflowRuns(limit = 5) {
         try {
-            const response = await this.octokit.rest.actions.listWorkflowRunsForRepo({
-                owner: this.owner,
-                repo: this.repo,
-                per_page: limit
-            });
-            return response.data.workflow_runs;
+            const data = await this._request('GET', `/repos/${this.owner}/${this.repo}/actions/runs?per_page=${limit}`);
+            return data.workflow_runs;
         } catch (error) {
             console.error('取得 Workflow 執行記錄失敗:', error);
             throw error;
@@ -124,12 +121,8 @@ class GitHubAPI {
 
     async getRunStatus(runId) {
         try {
-            const response = await this.octokit.rest.actions.getWorkflowRun({
-                owner: this.owner,
-                repo: this.repo,
-                run_id: runId
-            });
-            return response.data;
+            const data = await this._request('GET', `/repos/${this.owner}/${this.repo}/actions/runs/${runId}`);
+            return data;
         } catch (error) {
             console.error('取得執行狀態失敗:', error);
             throw error;
