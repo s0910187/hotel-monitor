@@ -26,3 +26,4 @@ Thumbs.db
 test-results/
 playwright-report/
 playwright/.cache/
+full_log_v*.txt

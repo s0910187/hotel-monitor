@@ -228,7 +228,8 @@ const app = {
         html += '</div>';
         cardsContainer.innerHTML = html;
 
-        this.renderChart();
+        // 圖表已隱藏
+        // this.renderChart();
     },
 
     renderChart() {
@@ -340,7 +341,7 @@ const app = {
                         <label class="block text-sm font-semibold text-gray-700 mb-2">監控日期（每行一個）</label>
                         <textarea id="datesInput" rows="6" 
                                   class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition font-mono text-sm"></textarea>
-                        <p class="text-xs text-gray-500 mt-1">💡 每行輸入一個入住日期 (YYYY/MM/DD)，系統將自動檢查當晚是否有空房 (預設住一晚)</p>
+                        <p class="text-xs text-gray-500 mt-1">💡 每行輸入一個入住日期 (YYYY/MM/DD)，系統將針對每個日期單獨檢查一晚住宿（自動計算隔日退房）</p>
                     </div>
                     
                     <div>
