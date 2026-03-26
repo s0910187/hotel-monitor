@@ -1,13 +1,13 @@
 {
   "2026/04/17": {
-    "isAvailable": true,
-    "price": 60760,
-    "currency": "JPY"
+    "isAvailable": false,
+    "price": null,
+    "currency": null
   },
   "2026/04/18": {
-    "isAvailable": true,
-    "price": 80360,
-    "currency": "JPY"
+    "isAvailable": false,
+    "price": null,
+    "currency": null
   },
   "2026/04/19": {
     "isAvailable": false,
