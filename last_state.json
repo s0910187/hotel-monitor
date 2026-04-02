@@ -1,8 +1,8 @@
 {
   "2026/04/17": {
-    "isAvailable": false,
-    "price": null,
-    "currency": null
+    "isAvailable": true,
+    "price": 60760,
+    "currency": "JPY"
   },
   "2026/04/18": {
     "isAvailable": false,
@@ -15,13 +15,13 @@
     "currency": null
   },
   "2026/04/20": {
-    "isAvailable": false,
-    "price": null,
-    "currency": null
+    "isAvailable": true,
+    "price": 64680,
+    "currency": "JPY"
   },
   "2026/04/21": {
-    "isAvailable": false,
-    "price": null,
-    "currency": null
+    "isAvailable": true,
+    "price": 64680,
+    "currency": "JPY"
   }
 }
