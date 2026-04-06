@@ -15,13 +15,13 @@
     "currency": null
   },
   "2026/04/20": {
-    "isAvailable": true,
-    "price": 13478,
-    "currency": "TWD"
+    "isAvailable": false,
+    "price": null,
+    "currency": null
   },
   "2026/04/21": {
-    "isAvailable": true,
-    "price": 64680,
-    "currency": "JPY"
+    "isAvailable": false,
+    "price": null,
+    "currency": null
   }
 }
