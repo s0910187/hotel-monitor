@@ -20,8 +20,8 @@
     "currency": null
   },
   "2026/04/21": {
-    "isAvailable": false,
-    "price": null,
-    "currency": null
+    "isAvailable": true,
+    "price": 45080,
+    "currency": "JPY"
   }
 }
